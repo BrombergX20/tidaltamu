@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+    <head></head>
+<body>
+<input type="file" id="fileInput">
+<input type="text" id="typeInput" placeholder="mp3, mp4, pdf">
+<button onclick="upload()">Upload</button>
+
+<script>
+async function upload() {
+  // get values
+  const file = document.getElementById("fileInput").files[0]
+  const type = document.getElementById("typeInput").value
+
+  // package data
+  const formData = new FormData()
+  formData.append("file", file)
+  formData.append("type", type)
+
+  // send to FastAPI
+  const response = await fetch("http://localhost:8000/add_doc", {
+    method: "POST",
+    body: formData
+  })
+
+  const result = await response.json()
+  console.log(result)
+}
+
+</script>
+</body>
+</html>
