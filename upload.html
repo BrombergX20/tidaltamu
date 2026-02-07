@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>History searcher — Upload</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">History searcher</div>
+      <nav class="nav">
+        <a href="index.html">Home</a>
+        <a href="upload.html">Upload</a>
+        <a href="search.html">Search</a>
+        <a href="saved.html">Saved Files</a>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <h2>Upload files</h2>
+        <form id="uploadForm">
+          <input type="file" id="fileInput" multiple>
+          <button type="submit">Save to browser</button>
+        </form>
+        <p class="note">Files are saved locally in your browser (localStorage) for this demo.</p>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
