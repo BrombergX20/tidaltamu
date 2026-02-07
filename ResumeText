@@ -1,0 +1,84 @@
+\documentclass[12pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\setlength{\parskip}{0.7em}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+\begin{center}
+    \textbf{Fabrizio De Lima Bello}
+\end{center}
+
+\begin{center}
+    Houston, TX - (346) 368-1586 - fabrizio delima1@gmail.com - \href{https://linkedin.com/in/fabrizio-de-lima-bello}{linkedin.com/in/fabrizio-de-lima-bello}
+\end{center}
+
+\section*{Objective}
+
+Seeking internship opportunities where I can apply my technical and collaborative skills
+
+\section*{Education}
+
+\textbf{Texas A\&M University} \hspace{0.5cm} | College Station, Texas \hspace{0.5cm} May 2029\\
+Bachelor of Science in Electrical Engineering | Minors in Computer Science and Statistics | GPA: 3.928\\
+\textbf{Lone Star College - Tomball} \hspace{0.5cm} | Tomball, Texas | Dual Credit student \hspace{0.5cm} May 2025\\
+\textbf{Tomball Memorial High School} \hspace{0.5cm} | Tomball, Texas | Class Rank: 48/733 (Top 6.48\%) | GPA: 4.25 \hspace{0.5cm} May 2025
+
+\section*{Experience}
+
+\textbf{The Brook Church Livestream Operator} | Volunteering | Tomball, TX \hspace{0.5cm} October 2023 - Present
+\begin{itemize}[leftmargin=*]
+    \item Delivered high-quality livestream of church services weekly, providing access to remote viewers and achieving over 100 additional views
+    \item Edited sermon podcasts once a week using livestream footage, further extending digital reach
+\end{itemize}
+
+\textbf{Sleep in Heavenly Peace} | Volunteering | College Station, TX \hspace{0.5cm} July 2025
+\begin{itemize}[leftmargin=*]
+    \item Collaborated with a volunteer team to build 40 beds for children who previously slept on the floor, helping provide them with a safe, comfortable, and dignified place to rest
+\end{itemize}
+
+\textbf{Top Dog Fireworks Salesperson} | Volunteering | Houston, TX \hspace{0.5cm} July 2023 - December 2024
+\begin{itemize}[leftmargin=*]
+    \item Engaged with customers to maintain a smooth, fast-paced environment during peak hours, resulting in an increase in daily revenue, contributing over \$1,000 in additional sales over holiday periods
+\end{itemize}
+
+\section*{Leadership \& Activities}
+
+\textbf{Engineering Summer Bridge Program} | $\sim$68 hrs/week | Texas A\&M University \hspace{0.5cm} July 2025
+\begin{itemize}[leftmargin=*]
+    \item Participated in a full-time residential program that prepares incoming engineering freshmen for college through daily Calculus and Python programming seminars
+    \item Developed a text-based game with a team in Python resembling a shopping simulator, featuring an inventory system, store ratings, AI integration for customer dialogue, and a store inspection system
+\end{itemize}
+
+\textbf{High School Band} | $\sim$15 hrs/week | Tomball Memorial High School \hspace{0.5cm} August 2021 - May 2025
+\begin{itemize}[leftmargin=*]
+    \item Directed low brass section of approximately 20 people as a junior and senior, honing fundamentals, and contributing to qualification for the UIL State Marching Contest
+    \item Mentored on average 5 new members per year on basics of marching, improving team communication and teaching skills
+\end{itemize}
+
+\section*{Projects}
+
+\textbf{EnemyRush} | Minecraft Server Project \hspace{0.5cm} July 2018 - Present
+\begin{itemize}[leftmargin=*]
+    \item Programmed a minigame within a popular videogame, where players defeat waves of enemies, with several custom combat mechanics using a programming language called Skript (Domain-Specific Language)
+    \item Created and managed an online community of nearly 100 players to facilitate feedback and continuous improvement of creative work
+    \item Built team collaboration skills and problem solving skills through brainstorming of possible solutions and constant communication with other members of the project
+\end{itemize}
+
+\section*{Awards / Certificates}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Recognitions:} Hispanic Scholarship Fund Scholar | BigFuture National Hispanic Recognition Program | Tomball Rotary Club Student of the Month (October 2024)
+    \item \textbf{YouScience Certificates:} Engineering Principles I | Engineering Principles II | Electronics II Computer Programming I | Computer Programming II
+    \item \textbf{Certiport Certificates:} IT Specialist: Java
+    \item \textbf{AUTODESK User Certifications:} Inventor | Fusion
+\end{itemize}
+
+\textbf{Languages:} Proficient in English and Spanish\\
+\textbf{Skills:} Java/Python Programming, Circuit Fundamentals, CAD Design, Game Development
+
+\end{document}
