@@ -3,3 +3,5 @@ __pycache__/
 trial.html
 *.pyc
 *.pyo
+temp/
+.*
