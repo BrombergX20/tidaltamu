@@ -8,7 +8,8 @@ Setup
 
 ```powershell
 $env:BUCKET_NAME="tidaltamufiles"
-$env:AWS_REGION="us-west-2"  # optional
+# Use `S3_REGION` (or `REGION`) for Amplify, since env vars cannot start with `AWS`:
+$env:S3_REGION="us-west-2"  # optional
 # Credentials should be provided by the environment or IAM role; avoid setting long-term keys here in the repo.
 ```
 
@@ -38,7 +39,7 @@ Example (inline in HTML) before including `script.js`:
 <script src="script.js"></script>
 ```
 
-In Amplify Console, add environment variables `BUCKET_NAME` and `AWS_REGION` to the backend function or service and ensure the function's IAM role has S3 permissions (`s3:PutObject`, `s3:ListBucket`, `s3:GetObject`).
+In Amplify Console, add environment variables `BUCKET_NAME` and `S3_REGION` (or `REGION`) to the backend function or service and ensure the function's IAM role has S3 permissions (`s3:PutObject`, `s3:ListBucket`, `s3:GetObject`).
 
 Notes
 
