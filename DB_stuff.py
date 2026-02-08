@@ -23,6 +23,17 @@ AWS_BUCKET = None
 def make_key(filename: str) -> str:
     return f"{int(time.time())}_{uuid.uuid4().hex}_{filename}"
 
+def deduplicate_tags(tags):
+    """Remove duplicate tags (case-insensitive) while preserving original casing of first occurrence"""
+    seen = set()
+    unique = []
+    for tag in tags:
+        tag_lower = tag.lower()
+        if tag_lower not in seen:
+            seen.add(tag_lower)
+            unique.append(tag)
+    return unique
+
 def process_transcription_job_background(job_name, bucket, file_key, db_item_key):
     """Background task: Poll transcription job and update DynamoDB when complete"""
     print(f"[BACKGROUND] Monitoring transcription job: {job_name}")
@@ -55,7 +66,8 @@ def process_transcription_job_background(job_name, bucket, file_key, db_item_key
                                     
                                     # Generate tags from transcript using Comprehend
                                     transcript_tags = get_text_tags(transcript_text)
-                                    print(f"[BACKGROUND] Generated {len(transcript_tags)} tags from transcript")
+                                    transcript_tags = deduplicate_tags(transcript_tags)
+                                    print(f"[BACKGROUND] Generated {len(transcript_tags)} unique tags from transcript")
                                     
                                     # Get visual labels if this is a video (they're stored separately)
                                     final_tags = transcript_tags
@@ -68,9 +80,10 @@ def process_transcription_job_background(job_name, bucket, file_key, db_item_key
                                             visual_labels = item_response['Item'].get('visual_labels', [])
                                             print(f"[BACKGROUND] Found {len(visual_labels)} visual labels from video")
                                         
-                                        # Combine transcript tags and visual labels (remove duplicates)
-                                        final_tags = list(set(transcript_tags + visual_labels))[:15]
-                                        print(f"[BACKGROUND] Combined tags: {len(final_tags)} total (transcript + visual)")
+                                        # Combine transcript tags and visual labels (remove duplicates case-insensitively)
+                                        combined = transcript_tags + visual_labels
+                                        final_tags = deduplicate_tags(combined)[:15]
+                                        print(f"[BACKGROUND] Combined tags: {len(final_tags)} unique total (transcript + visual)")
                                         
                                         # Update DynamoDB with both transcript and combined tags
                                         dynamodb.update_item(
@@ -141,7 +154,8 @@ def process_video_job_background(job_id, db_item_key):
                     # Sort by confidence (descending) and extract top 6 labels
                     sorted_labels = sorted(labels_with_confidence, key=lambda x: x['confidence'], reverse=True)
                     labels_list = [label['name'] for label in sorted_labels][:6]
-                    print(f"[BACKGROUND] Extracted {len(labels_list)} high-confidence visual labels from video")
+                    labels_list = deduplicate_tags(labels_list)  # Ensure uniqueness
+                    print(f"[BACKGROUND] Extracted {len(labels_list)} unique high-confidence visual labels from video")
                     
                     # Store visual labels in a temporary spot - will be merged with transcript tags later
                     if dynamodb:
@@ -203,7 +217,7 @@ def get_ai_tags(bucket, key, file_ext):
         )
         
         # Filter by confidence (>= 0.75) and sort by confidence score
-        high_confidence = [label for label in response['Labels'] if label.get('Confidence', 0) >= 75]
+        high_confidence = [label for label in response['Labels'] if label.get('Confidence', 0) >= 99]
         sorted_labels = sorted(high_confidence, key=lambda x: x.get('Confidence', 0), reverse=True)
         
         # Extract names, limit to top 6
@@ -231,7 +245,7 @@ def get_text_tags(text):
         # Filter by confidence score (>= 0.7) and sort by importance
         high_confidence = [
             phrase for phrase in response.get('KeyPhrases', [])
-            if phrase.get('Score', 0) >= 0.7
+            if phrase.get('Score', 0) >= 0.99
         ]
         
         # Sort by confidence score (descending) to prioritize important phrases
