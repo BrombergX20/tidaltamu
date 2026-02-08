@@ -330,7 +330,7 @@ def get_text_from_image(image_b64: str) -> str:
         return ""
 
 def process_text_file(bucket, key):
-    """Download text file from S3 and extract tags using Qwen"""
+    """Download text file from S3 and extract tags using Qwen, return both tags and transcript"""
     global s3_client
     if s3_client is None:
         startup()
@@ -342,12 +342,12 @@ def process_text_file(bucket, key):
         print(f"Text file read: {len(text_content)} characters")
         tags = get_text_tags(text_content)
         print(f"Text file tags: {tags}")
-        return tags
+        return {'tags': tags, 'transcript': text_content}
     except Exception as e:
         print(f"Text File Processing Error: {e}")
         import traceback
         traceback.print_exc()
-        return []
+        return {'tags': [], 'transcript': ''}
 
 def process_pdf_file(bucket, key):
     """Download PDF from S3, extract text, and generate tags."""
@@ -375,10 +375,11 @@ def process_pdf_file(bucket, key):
             except Exception as e:
                 print(f"pypdf extraction failed: {e}")
 
-        # If text is extracted, generate tags and return
+        # If text is extracted, generate tags and return with transcript
         if extracted_text and len(extracted_text.strip()) >= 50:
             print("Generating tags from pypdf extracted text.")
-            return get_text_tags(extracted_text)
+            tags = get_text_tags(extracted_text)
+            return {'tags': tags, 'transcript': extracted_text}
 
         # 2) Fallback: If pypdf fails, render PDF to images and use OCR
         print("pypdf failed or extracted too little text. Falling back to image-based OCR.")
@@ -401,7 +402,8 @@ def process_pdf_file(bucket, key):
                 if ocr_text and len(ocr_text.strip()) >= 20:
                     print(f"Successfully extracted {len(ocr_text)} characters using OCR fallback.")
                     print("Generating tags from OCR extracted text.")
-                    return get_text_tags(ocr_text)
+                    tags = get_text_tags(ocr_text)
+                    return {'tags': tags, 'transcript': ocr_text}
                 else:
                     print("OCR fallback did not yield significant text.")
 
@@ -409,12 +411,12 @@ def process_pdf_file(bucket, key):
                 print(f"PDF->image->OCR conversion failed: {e}")
 
         print("Could not extract text from PDF using any method.")
-        return []
+        return {'tags': [], 'transcript': ''}
     except Exception as e:
         print(f"PDF Processing Error: {e}")
         import traceback
         traceback.print_exc()
-        return []
+        return {'tags': [], 'transcript': ''}
 
 def process_audio_file(bucket, key, db_item_key):
     """Start AWS Transcribe job asynchronously and return immediately"""
@@ -545,16 +547,21 @@ def upload_file(file_path: str) -> str:
         
         # 2. Get Tags based on file type & Save to DB
         tags = []
+        transcript = ''
         
         if file_ext in ['jpg', 'jpeg', 'png']:
             print("Processing as IMAGE using Rekognition...")
             tags = get_ai_tags(AWS_BUCKET, key, file_ext)
         elif file_ext in ['txt', 'md', 'csv', 'json', 'xml', 'html', 'htm', 'log']:
             print("Processing as TEXT using Qwen...")
-            tags = process_text_file(AWS_BUCKET, key)
+            result = process_text_file(AWS_BUCKET, key)
+            tags = result['tags']
+            transcript = result['transcript']
         elif file_ext in ['pdf']:
             print("Processing as PDF using Qwen...")
-            tags = process_pdf_file(AWS_BUCKET, key)
+            result = process_pdf_file(AWS_BUCKET, key)
+            tags = result['tags']
+            transcript = result['transcript']
         elif file_ext in ['mp3', 'wav']:
             print("Processing as AUDIO using Transcribe (background task)...")
             tags = process_audio_file(AWS_BUCKET, key, key)
@@ -575,7 +582,7 @@ def upload_file(file_path: str) -> str:
                         'original_name': file_name,
                         'url': url,
                         'tags': tags,
-                        'transcript': '',  # Will be filled in by background task for audio/video
+                        'transcript': transcript,  # Filled for .txt/.pdf; filled by background task for audio/video
                         'visual_labels': [],  # Will be filled in by video job background task
                         'created_at': str(int(time.time()))
                     }
