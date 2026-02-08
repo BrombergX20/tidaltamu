@@ -69,7 +69,7 @@ def upload_file(file_path: str) -> str:
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
     
 
-def list_files():
+def get_files():
     startup() # Ensure connected
     try:
         response = s3_client.list_objects_v2(Bucket=AWS_BUCKET)
