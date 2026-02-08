@@ -21,7 +21,7 @@ async function saveFileToServer(file){
   const mt = (file.name || '').match(/\.([^.]+)$/);
   const fileExt = mt ? mt[1].toLowerCase() : '';
   fd.append('type', fileExt);
-  const resp = await fetch(API_BASE + '/upload', { method: 'POST', body: fd });
+  const resp = await fetch(API_BASE + '/add_doc', { method: 'POST', body: fd });
   const ct = resp.headers.get('content-type') || '';
   const bodyText = await resp.text();
   if(!resp.ok){
