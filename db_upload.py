@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-AWS_BUCKET = os.getenv('BUCKET_NAME') or os.getenv('S3_BUCKET') or os.getenv('tidaltamufiles')
+AWS_BUCKET = os.getenv('BUCKET_NAME') or os.getenv('S3_BUCKET')
 S3_REGION = os.getenv('S3_REGION') or os.getenv('REGION')
 
 if not AWS_BUCKET:
