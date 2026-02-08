@@ -2,6 +2,7 @@ import boto3
 import os
 import time
 import uuid
+import uuid
 import mimetypes
 import json
 import urllib.request
@@ -270,7 +271,7 @@ def get_text_tags(text):
 
 def get_text_from_document_aws(document_bytes: bytes, file_type: str) -> str:
     """Extract text from a document (image or PDF) using Amazon Textract."""
-    global textract
+    global textract, s3_client, AWS_BUCKET # Added s3_client and AWS_BUCKET
     if textract is None:
         startup()
 
@@ -288,8 +289,16 @@ def get_text_from_document_aws(document_bytes: bytes, file_type: str) -> str:
         elif file_type == 'pdf':
             # For multi-page PDFs, use asynchronous Textract
             print("Textract: Starting asynchronous text detection for PDF.")
+
+            # Generate a temporary S3 key for the PDF bytes
+            temp_key = f"temp_textract_pdf/{uuid.uuid4().hex}.pdf"
+            
+            # Upload the PDF bytes to S3
+            s3_client.put_object(Bucket=AWS_BUCKET, Key=temp_key, Body=document_bytes)
+            print(f"Textract: Uploaded PDF to temporary S3 location: s3://{AWS_BUCKET}/{temp_key}")
+
             start_response = textract.start_document_text_detection(
-                DocumentLocation={'Bytes': document_bytes} # Textract can take bytes directly for start_document_text_detection
+                DocumentLocation={'S3Object': {'Bucket': AWS_BUCKET, 'Name': temp_key}}
             )
             job_id = start_response['JobId']
             print(f"Textract: Job started with ID: {job_id}")
@@ -301,6 +310,10 @@ def get_text_from_document_aws(document_bytes: bytes, file_type: str) -> str:
                 job_response = textract.get_document_text_detection(JobId=job_id)
                 status = job_response['JobStatus']
                 print(f"Textract: Job status: {status}")
+
+            # Delete the temporary S3 object after processing
+            s3_client.delete_object(Bucket=AWS_BUCKET, Key=temp_key)
+            print(f"Textract: Deleted temporary S3 object: s3://{AWS_BUCKET}/{temp_key}")
 
             if status == 'SUCCEEDED':
                 pages = []
