@@ -66,14 +66,10 @@ def upload_file(file_path: str) -> str:
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
 
 def list_files():
-<<<<<<< HEAD
-    startup() # Ensure connected
-=======
     # NEW FUNCTION: Gets list of all files in bucket
     global s3_client, AWS_BUCKET
     if s3_client is None: startup()
 
->>>>>>> baa3406 (editied a lot)
     try:
         response = s3_client.list_objects_v2(Bucket=AWS_BUCKET)
         files = []
