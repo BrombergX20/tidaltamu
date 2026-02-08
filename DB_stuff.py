@@ -8,6 +8,7 @@ import urllib.request
 import threading
 import requests
 import io
+import base64
 try:
     from pypdf import PdfReader
 except ImportError:
@@ -293,6 +294,41 @@ Respond with ONLY a comma-separated list of tags, nothing else. Example format: 
         print(f"Text Tagging Error: {e}")
         return []
 
+def get_text_from_image(image_b64: str) -> str:
+    """Extract text from a single image using an OCR prompt."""
+    api_key = os.getenv("API_KEY")
+    
+    prompt = f"You are an OCR engine. Your task is to extract all text from the given image. Do not add any comments, explanations, or summaries. Return only the raw, extracted text.\n\nImage (base64): {image_b64[:500]}...[TRUNC]"
+    
+    try:
+        resp = requests.post(
+            "https://api.featherless.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "google/gemma-3-27b-it",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,  # Low temperature for deterministic OCR
+                "max_tokens": 1500
+            },
+            timeout=90
+        )
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                extracted_text = result['choices'][0]['message']['content'].strip()
+                print(f"Extracted {len(extracted_text)} characters from image via OCR.")
+                return extracted_text
+        else:
+            print(f"Featherless OCR API error: {resp.status_code} - {resp.text}")
+            return ""
+    except Exception as e:
+        print(f"Error in get_text_from_image: {e}")
+        return ""
+
 def process_text_file(bucket, key):
     """Download text file from S3 and extract tags using Qwen"""
     global s3_client
@@ -314,19 +350,17 @@ def process_text_file(bucket, key):
         return []
 
 def process_pdf_file(bucket, key):
-    """Download PDF from S3. Try extracting text; if available, use Qwen for tagging. Otherwise render pages to images and send images to Qwen."""
+    """Download PDF from S3, extract text, and generate tags."""
     global s3_client
     if s3_client is None:
         startup()
-
-    api_key = os.getenv("API_KEY")
 
     try:
         print(f"Processing PDF file {key}...")
         response = s3_client.get_object(Bucket=bucket, Key=key)
         pdf_bytes = response['Body'].read()
 
-        # 1) Try to extract text using pypdf
+        # 1) Try to extract text directly using pypdf
         extracted_text = ''
         if PdfReader is not None:
             try:
@@ -337,74 +371,44 @@ def process_pdf_file(bucket, key):
                         extracted_text += txt + '\n'
                     except Exception:
                         continue
+                print(f"Successfully extracted {len(extracted_text)} characters using pypdf.")
             except Exception as e:
                 print(f"pypdf extraction failed: {e}")
 
+        # If text is extracted, generate tags and return
         if extracted_text and len(extracted_text.strip()) >= 50:
-            print(f"Extracted text from PDF ({len(extracted_text)} chars), sending to Qwen")
-            tags = get_text_tags(extracted_text)
-            tags = deduplicate_tags(tags)[:8]
-            print(f"PDF text tags: {tags}")
-            return tags
+            print("Generating tags from pypdf extracted text.")
+            return get_text_tags(extracted_text)
 
-        # 2) Fallback: render PDF pages to images using PyMuPDF (fitz)
+        # 2) Fallback: If pypdf fails, render PDF to images and use OCR
+        print("pypdf failed or extracted too little text. Falling back to image-based OCR.")
         if fitz is not None:
             try:
                 doc = fitz.open(stream=pdf_bytes, filetype='pdf')
-                images_b64 = []
-                max_pages = min(3, doc.page_count)
-                import base64
+                ocr_text = ''
+                max_pages = min(5, doc.page_count)  # Process up to 5 pages
+                
                 for i in range(max_pages):
                     page = doc.load_page(i)
                     pix = page.get_pixmap(dpi=150)
                     img_bytes = pix.tobytes(output='jpeg')
-                    images_b64.append(base64.b64encode(img_bytes).decode('utf-8'))
+                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    
+                    print(f"Performing OCR on page {i+1}/{max_pages}...")
+                    page_text = get_text_from_image(img_b64)
+                    ocr_text += page_text + '\n'
+                
+                if ocr_text and len(ocr_text.strip()) >= 20:
+                    print(f"Successfully extracted {len(ocr_text)} characters using OCR fallback.")
+                    print("Generating tags from OCR extracted text.")
+                    return get_text_tags(ocr_text)
+                else:
+                    print("OCR fallback did not yield significant text.")
 
-                if images_b64:
-                    # Create prompt including up to 3 base64 JPEGs
-                    prompt_parts = [f"Image {i+1} (base64): {b64[:500]}...[TRUNC]" for i, b64 in enumerate(images_b64)]
-                    prompt = (
-                        "You are an AI assistant that analyzes images of documents. Your task is to:\n"
-                        "1. Perform OCR on the provided images to extract all the text.\n"
-                        "2. Analyze the extracted text and generate 5-8 of the most important and meaningful tags that capture the key topics, concepts, and ideas.\n\n"
-                        "**Important Instructions:**\n"
-                        "- The document can be of any type (e.g., academic paper, personal note, code snippet, homework). Do not assume a specific document type.\n"
-                        "- The tags should be neutral, objective, and directly related to the extracted text.\n"
-                        "- Avoid generating generic, boilerplate, or irrelevant tags (e.g., \"Contract\", \"Legal Document\", \"Agreement\").\n"
-                        "- Focus on semantic importance and relevance, not just frequent words.\n\n"
-                        "Respond with ONLY a comma-separated list of tags, nothing else. Example format: Mathematics, Algebra, Equations, Homework\n\n"
-                        "The images are provided below as base64 encoded JPEGs.\n"
-                        + "\n\n".join(prompt_parts)
-                    )
-
-                    resp = requests.post(
-                        "https://api.featherless.ai/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": "google/gemma-3-27b-it",
-                            "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.3,
-                            "max_tokens": 200
-                        },
-                        timeout=60
-                    )
-
-                    if resp.status_code == 200:
-                        result = resp.json()
-                        if 'choices' in result and len(result['choices']) > 0:
-                            tags_text = result['choices'][0]['message']['content'].strip()
-                            tags = [t.strip() for t in tags_text.split(',') if t.strip()]
-                            tags = deduplicate_tags(tags)[:8]
-                            print(f"Extracted {len(tags)} tags from PDF images via Gemma")
-                            return tags
-                    else:
-                        print(f"Featherless image API error: {resp.status_code} - {resp.text}")
             except Exception as e:
-                print(f"PDF->image conversion failed: {e}")
+                print(f"PDF->image->OCR conversion failed: {e}")
 
+        print("Could not extract text from PDF using any method.")
         return []
     except Exception as e:
         print(f"PDF Processing Error: {e}")
