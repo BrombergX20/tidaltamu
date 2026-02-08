@@ -700,7 +700,7 @@ def delete_file(key: str):
         return False
 
 def qwen_search_files(user_query: str):
-    """Use Qwen to find files matching natural language query by reading transcripts and tags"""
+    """Use Qwen to find files matching natural language query with two-pass approach: strict first, then lenient"""
     global dynamodb, s3_client, AWS_BUCKET
     if dynamodb is None: startup()
     
@@ -743,10 +743,31 @@ def qwen_search_files(user_query: str):
                 'tags': tags
             })
         
-        # Build prompt for Qwen - be MORE LENIENT in matching
         all_context = "".join(numbered_context)
         
-        prompt = f"""You are a lenient search agent. The user is looking for files matching their natural language query. Be GENEROUS - include files that are even tangentially related or have semantic overlap with the query.
+        # PASS 1: STRICT/PRECISE SEARCH
+        print("[QWEN SEARCH] Pass 1: Strict search...")
+        strict_prompt = f"""You are a precise search agent. Find files that contain direct quotes, specific mentions, or very similar wording to the user's query.
+
+Here is a numbered list of all files with their metadata:
+
+{all_context}
+
+User Query: {user_query}
+
+Your task: Identify ONLY files that contain direct quotes, specific phrases, or very closely related content to the user's query. Be strict - only include files with clear, direct relevance. Ignore tangential or loosely related files. Return ONLY the numbers (in square brackets) of matching files, one per line. For example: [0] [2] [5]
+If no files have direct relevance, return "NO_MATCHES"."""
+
+        strict_indices = _perform_qwen_search(strict_prompt, api_key, temperature=0.2)
+        
+        # If we got any results from strict search, return those
+        if len(strict_indices) > 0:
+            print(f"[QWEN SEARCH] Pass 1 returned {len(strict_indices)} results, using those")
+            return _build_search_results(strict_indices, file_context)
+        
+        # PASS 2: LENIENT SEARCH
+        print("[QWEN SEARCH] Pass 1 found nothing, doing Pass 2: Lenient search...")
+        lenient_prompt = f"""You are a lenient search agent. The user is looking for files matching their natural language query. Be GENEROUS - include files that are even tangentially related or have semantic overlap with the query.
 
 Here is a numbered list of all files with their metadata:
 
@@ -757,8 +778,24 @@ User Query: {user_query}
 Your task: Identify which files match or relate to the user's query based on content, tags, and transcripts. Be lenient - include files with semantic overlap, even if not exact matches. Return ONLY the numbers (in square brackets) of matching files, one per line. For example: [0] [2] [5]
 If truly no files match, return "NO_MATCHES"."""
 
-        print("[QWEN SEARCH] Sending query to Qwen...")
+        lenient_indices = _perform_qwen_search(lenient_prompt, api_key, temperature=0.5)
         
+        if len(lenient_indices) == 0:
+            print("[QWEN SEARCH] Both passes found no matches")
+            return []
+        
+        print(f"[QWEN SEARCH] Pass 2 returned {len(lenient_indices)} results")
+        return _build_search_results(lenient_indices, file_context)
+        
+    except Exception as e:
+        print(f"[QWEN SEARCH] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+def _perform_qwen_search(prompt: str, api_key: str, temperature: float = 0.3):
+    """Helper function to perform a single Qwen search pass and return list of indices"""
+    try:
         response = requests.post(
             "https://api.featherless.ai/v1/chat/completions",
             headers={
@@ -768,7 +805,7 @@ If truly no files match, return "NO_MATCHES"."""
             json={
                 "model": "Qwen/Qwen2.5-7B-Instruct",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.5,  # Slightly higher for more flexible matching
+                "temperature": temperature,
                 "max_tokens": 500
             },
             timeout=60
@@ -781,37 +818,34 @@ If truly no files match, return "NO_MATCHES"."""
                 print(f"[QWEN SEARCH] Response: {response_text}")
                 
                 if "NO_MATCHES" in response_text.upper():
-                    print("[QWEN SEARCH] No matches found")
                     return []
                 
                 # Parse indices from response (e.g., "[0]", "[2]", "[5]")
                 import re
                 indices = [int(m) for m in re.findall(r'\[(\d+)\]', response_text)]
-                print(f"[QWEN SEARCH] Matched indices: {indices}")
-                
-                # Collect matching files by index
-                matching_files = []
-                for f in file_context:
-                    if f['idx'] in indices:
-                        matching_files.append({
-                            "key": f['key'],
-                            "name": f['name'],
-                            "tags": f['tags'],
-                            "url": s3_client.generate_presigned_url(
-                                'get_object',
-                                Params={'Bucket': AWS_BUCKET, 'Key': f['key']},
-                                ExpiresIn=3600
-                            ) if s3_client else ''
-                        })
-                
-                print(f"[QWEN SEARCH] Found {len(matching_files)} matching files")
-                return matching_files
+                return indices
         else:
             print(f"[QWEN SEARCH] Featherless API error: {response.status_code}")
             return []
-        
     except Exception as e:
-        print(f"[QWEN SEARCH] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[QWEN SEARCH] Error in search: {e}")
         return []
+
+def _build_search_results(indices: list, file_context: list):
+    """Helper function to build result objects from file indices"""
+    global s3_client, AWS_BUCKET
+    matching_files = []
+    for f in file_context:
+        if f['idx'] in indices:
+            matching_files.append({
+                "key": f['key'],
+                "name": f['name'],
+                "tags": f['tags'],
+                "url": s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': AWS_BUCKET, 'Key': f['key']},
+                    ExpiresIn=3600
+                ) if s3_client else ''
+            })
+    print(f"[QWEN SEARCH] Returning {len(matching_files)} files")
+    return matching_files
