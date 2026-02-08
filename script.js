@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto-run logic based on page
   if(document.getElementById('savedList')) refreshSavedList();
   if(document.getElementById('uploadForm')) setupUpload();
+  
+  // NEW: Search Logic
+  const searchInput = document.getElementById('searchInput');
+  if(searchInput){
+    searchInput.addEventListener('input', (e) => refreshSearchResults(e.target.value));
+  }
 });
 
 // 2. Upload Logic
@@ -95,5 +101,65 @@ async function refreshSavedList() {
   } catch (err) {
     console.error(err);
     ul.innerHTML = `<li style="color:red">Connection Error. Is Server running?</li>`;
+  }
+}
+
+// 4. Search Logic (UPDATED to use Backend API)
+async function refreshSearchResults(query) {
+  const ul = document.getElementById('searchResults');
+  if(!ul) return;
+  
+  if (!query) { 
+      ul.innerHTML = ''; 
+      return; 
+  }
+
+  try {
+      // Call the new Python Search API
+      const resp = await fetch(`${API_BASE}/search?q=${query}`);
+      const files = await resp.json();
+      
+      ul.innerHTML = '';
+      
+      if(files.length === 0) {
+           ul.innerHTML = '<li style="color:gray">No matches found.</li>';
+           return;
+      }
+
+      files.forEach(f => {
+          const li = document.createElement('li');
+          
+          // Name + Tags
+          const left = document.createElement('div');
+          
+          const title = document.createElement('div');
+          title.textContent = f.original_name || f.name; // Fallback if original_name missing
+          title.style.fontWeight = 'bold';
+          title.style.color = 'white';
+          
+          const tags = document.createElement('div');
+          tags.style.color = '#4ea8ff';
+          tags.style.fontSize = '12px';
+          // Join the AI tags with commas
+          tags.textContent = (f.tags && f.tags.length > 0) ? "Tags: " + f.tags.join(', ') : "No tags";
+          
+          left.appendChild(title);
+          left.appendChild(tags);
+
+          // View Button
+          const btn = document.createElement('button');
+          btn.textContent = 'View';
+          btn.style.marginLeft = 'auto'; 
+          btn.style.padding = '5px 15px';
+          btn.style.cursor = 'pointer';
+          btn.onclick = () => window.open(f.url, '_blank');
+
+          li.appendChild(left);
+          li.appendChild(btn);
+          ul.appendChild(li);
+      });
+  } catch(err) {
+      console.error(err);
+      ul.innerHTML = '<li style="color:red">Search Error</li>';
   }
 }

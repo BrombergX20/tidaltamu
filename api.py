@@ -4,7 +4,13 @@ from contextlib import asynccontextmanager
 import os
 
 # Import functions from DB_stuff
+<<<<<<< HEAD
 from DB_stuff import upload_file, list_files, search_files
+=======
+from DB_stuff import upload_file, list_files
+from DB_stuff import delete_file
+from fastapi import Body
+>>>>>>> 7252e2835fb7896d81e5888c9067656a11ca41db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +60,20 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...)):
 async def get_all_docs():
     return list_files()
 
+<<<<<<< HEAD
 @app.get("/search")
 async def search_docs(q: str):
     return search_files(q)
+=======
+
+# Delete route: expects JSON body {"key": "s3_key"}
+@app.post("/delete_doc")
+async def delete_doc(payload: dict = Body(...)):
+    key = payload.get('key')
+    if not key:
+        return {"success": False, "error": "missing key"}
+    ok = delete_file(key)
+    if ok:
+        return {"success": True}
+    return {"success": False, "error": "delete failed"}
+>>>>>>> 7252e2835fb7896d81e5888c9067656a11ca41db
