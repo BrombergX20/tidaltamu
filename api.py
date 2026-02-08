@@ -45,6 +45,8 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+print(f"Configured S3 bucket: {AWS_BUCKET} in region: {S3_REGION or 'default'}")
+
 
 @app.post('/upload')
 async def upload_file(file: UploadFile = File(...)):
