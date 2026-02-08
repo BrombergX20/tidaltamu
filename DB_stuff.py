@@ -127,16 +127,12 @@ def list_files():
                 try: display_name = key.split('_', 2)[-1]
                 except: display_name = key
 
-<<<<<<< HEAD
-                files.append({"name": display_name, "url": url, "size": obj['Size']})
-=======
                 files.append({
                     "key": key,
                     "name": display_name,
                     "url": url,
                     "size": obj['Size']
                 })
->>>>>>> 7252e2835fb7896d81e5888c9067656a11ca41db
         return files
     except Exception as e:
         print(f"LIST ERROR: {e}")

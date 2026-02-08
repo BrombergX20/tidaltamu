@@ -1,4 +1,3 @@
-// const API_BASE = (typeof window !== 'undefined' && (window.API_BASE || window.__API_BASE__)) ? (window.API_BASE || window.__API_BASE__) : '';
 const API_BASE = "http://ec2-44-243-17-123.us-west-2.compute.amazonaws.com:8000"
 
 document.addEventListener('DOMContentLoaded', () => {
