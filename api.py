@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
-#from db_upload import upload_file
+from db_upload import upload_file
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,9 +31,9 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         save_path = f"temp/files/{file.filename}"
         with open(save_path, "wb") as f:
             f.write(await file.read())
-        #upload_return = upload_file(save_path)
-        #if upload_return.keys() == ["key", "name", "url", "content_type"]:
-        #    return {"message": f"Document added successfully, type: {type}", "path": save_path}
+        upload_return = upload_file(save_path)
+        if upload_return.keys() == ["key", "name", "url", "content_type"]:
+            return {"message": f"Document added successfully, type: {type}", "path": save_path}
         
         return {"Message": "Failed to upload document"}
     
@@ -42,9 +42,9 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         save_path = f"temp/videos/{file.filename}"
         with open(save_path, "wb") as f:
             f.write(await file.read())
-        #upload_return = upload_file(save_path)
-        #if upload_return.keys() == ["key", "name", "url", "content_type"]:
-        #    return {"message": f"Video added successfully, type: {type}", "path": save_path}
+        upload_return = upload_file(save_path)
+        if upload_return.keys() == ["key", "name", "url", "content_type"]:
+            return {"message": f"Video added successfully, type: {type}", "path": save_path}
         
         return {"Message": "Failed to upload video file"}
     
@@ -53,9 +53,9 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         save_path = f"temp/audios/{file.filename}"
         with open(save_path, "wb") as f:
             f.write(await file.read())
-        #upload_return = upload_file(save_path)
-        #if upload_return.keys() == ["key", "name", "url", "content_type"]:
-        #    return {"message": f"Audio added successfully, type: {type}", "path": save_path}
+        upload_return = upload_file(save_path)
+        if upload_return.keys() == ["key", "name", "url", "content_type"]:
+            return {"message": f"Audio added successfully, type: {type}", "path": save_path}
         
         return {"Message": "Failed to upload audio file"}
 
