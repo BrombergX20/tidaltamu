@@ -3,15 +3,19 @@ import os
 import time
 import uuid
 from fastapi import HTTPException
+from dotenv import load_dotenv
+
+load_dotenv()
 
 AWS_BUCKET = os.getenv('BUCKET_NAME') or os.getenv('S3_BUCKET') or os.getenv('tidaltamufiles')
-AWS_REGION = os.getenv('us-west-2')
+S3_REGION = os.getenv('S3_REGION') or os.getenv('REGION')
 
 if not AWS_BUCKET:
     raise RuntimeError('Environment variable BUCKET_NAME (or S3_BUCKET) must be set')
 
 try:
-    s3_client = boto3.client('s3', region_name=AWS_REGION if AWS_REGION else None)
+    s3_client = boto3.client('s3', region_name=S3_REGION if S3_REGION else None)
+    
 except Exception as e:
     raise RuntimeError(f'Failed to create S3 client: {e}')
 
