@@ -710,7 +710,7 @@ def delete_file(key: str):
         return False
 
 def qwen_search_files(user_query: str):
-    """Use Qwen to find files matching natural language query with two-pass approach: strict first, then lenient"""
+    """Use Qwen to find files matching natural language query with three-pass approach: strict, lenient, then topic-based"""
     global dynamodb, s3_client, AWS_BUCKET
     if dynamodb is None: startup()
     
@@ -790,12 +790,31 @@ If truly no files match, return "NO_MATCHES"."""
 
         lenient_indices = _perform_qwen_search(lenient_prompt, api_key, temperature=0.5)
         
-        if len(lenient_indices) == 0:
-            print("[QWEN SEARCH] Both passes found no matches")
+        if len(lenient_indices) > 0:
+            print(f"[QWEN SEARCH] Pass 2 returned {len(lenient_indices)} results")
+            return _build_search_results(lenient_indices, file_context)
+        
+        # PASS 3: TOPIC-BASED SEARCH (Most Lenient)
+        print("[QWEN SEARCH] Pass 2 found nothing, doing Pass 3: Topic-based search...")
+        topic_prompt = f"""You are a very lenient topic-matching search agent. The user is interested in files related to certain topics or general areas. Find ANY files that share a general topic, subject area, or broad theme with the user's query.
+
+Here is a numbered list of all files with their metadata:
+
+{all_context}
+
+User Query: {user_query}
+
+Your task: Identify ANY files that relate to the general topics or subject areas mentioned in the user's query, even if very loosely connected. Be extremely generous - include files that share any related topic, theme, or general area of interest. Return ONLY the numbers (in square brackets) of matching files, one per line. For example: [0] [2] [5]
+If no files relate to the topic at all, return "NO_MATCHES"."""
+
+        topic_indices = _perform_qwen_search(topic_prompt, api_key, temperature=0.7)
+        
+        if len(topic_indices) == 0:
+            print("[QWEN SEARCH] All three passes found no matches")
             return []
         
-        print(f"[QWEN SEARCH] Pass 2 returned {len(lenient_indices)} results")
-        return _build_search_results(lenient_indices, file_context)
+        print(f"[QWEN SEARCH] Pass 3 returned {len(topic_indices)} results")
+        return _build_search_results(topic_indices, file_context)
         
     except Exception as e:
         print(f"[QWEN SEARCH] Error: {e}")
