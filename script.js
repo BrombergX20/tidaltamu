@@ -283,13 +283,22 @@ async function showTranscriptModal(key, fileName) {
     
     // Transcript text
     const transcriptDiv = document.createElement('div');
-    if (data.transcript && data.transcript.length > 0) {
-      transcriptDiv.textContent = data.transcript;
-      transcriptDiv.style.lineHeight = '1.6';
-      transcriptDiv.style.whiteSpace = 'pre-wrap';
-      transcriptDiv.style.wordWrap = 'break-word';
+    if (data.transcript !== null && data.transcript !== undefined) {
+      // Transcript field exists (transcription completed)
+      if (data.transcript.length > 0) {
+        transcriptDiv.textContent = data.transcript;
+        transcriptDiv.style.lineHeight = '1.6';
+        transcriptDiv.style.whiteSpace = 'pre-wrap';
+        transcriptDiv.style.wordWrap = 'break-word';
+      } else {
+        // Transcription completed but result is empty
+        transcriptDiv.textContent = 'No transcript content available.';
+        transcriptDiv.style.color = '#aaa';
+        transcriptDiv.style.fontStyle = 'italic';
+      }
     } else {
-      const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(data.filename);
+      // Transcription still in progress
+      const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
       transcriptDiv.textContent = isVideo 
         ? '⏳ Video audio is being transcribed. This typically takes 5-15 minutes. Please check back later.'
         : '⏳ Audio is being transcribed. This typically takes 5-15 minutes. Please check back later.';
