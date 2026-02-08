@@ -65,12 +65,17 @@ def get_text_tags(text):
     if comprehend is None:
         startup()
     
+    if not text or len(text.strip()) == 0:
+        print("Warning: Empty text provided to get_text_tags")
+        return []
+    
     try:
         response = comprehend.detect_key_phrases(
             Text=text[:5000],  # Comprehend has 5000 char limit per request
             LanguageCode='en'
         )
-        tags = [phrase['Text'] for phrase in response['KeyPhrases']]
+        tags = [phrase['Text'] for phrase in response.get('KeyPhrases', [])]
+        print(f"Extracted {len(tags)} tags from text via Comprehend")
         return tags[:10]  # Limit to 10 top tags
     except Exception as e:
         print(f"Text Tagging Error: {e}")
@@ -83,12 +88,17 @@ def process_text_file(bucket, key):
         startup()
     
     try:
+        print(f"Processing text file {key}...")
         response = s3_client.get_object(Bucket=bucket, Key=key)
         text_content = response['Body'].read().decode('utf-8')
+        print(f"Text file read: {len(text_content)} characters")
         tags = get_text_tags(text_content)
+        print(f"Text file tags: {tags}")
         return tags
     except Exception as e:
         print(f"Text File Processing Error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def process_audio_file(bucket, key):
@@ -98,6 +108,7 @@ def process_audio_file(bucket, key):
         startup()
     
     try:
+        print(f"Starting transcription for {key}...")
         # Start transcription job
         job_name = f"transcribe_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         transcribe.start_transcription_job(
@@ -111,22 +122,35 @@ def process_audio_file(bucket, key):
         max_attempts = 60
         attempt = 0
         while attempt < max_attempts:
-            response = transcribe.get_transcription_job(
+            job_response = transcribe.get_transcription_job(
                 TranscriptionJobName=job_name
             )
-            status = response['TranscriptionJob']['TranscriptionJobStatus']
+            status = job_response['TranscriptionJob']['TranscriptionJobStatus']
+            print(f"Transcription status: {status} (attempt {attempt+1}/{max_attempts})")
             
             if status == 'COMPLETED':
+                print(f"Transcription completed for {key}")
                 # Download the transcript JSON
-                transcript_uri = response['TranscriptionJob']['Transcript']['TranscriptFileUri']
-                with urllib.request.urlopen(transcript_uri) as response:
-                    transcript_json = json.loads(response.read().decode('utf-8'))
-                    transcript_text = transcript_json['results']['transcripts'][0]['transcript']
-                
-                tags = get_text_tags(transcript_text)
-                return tags
+                transcript_uri = job_response['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                try:
+                    with urllib.request.urlopen(transcript_uri) as url_response:
+                        transcript_json = json.loads(url_response.read().decode('utf-8'))
+                        if 'results' in transcript_json and 'transcripts' in transcript_json['results']:
+                            transcripts = transcript_json['results']['transcripts']
+                            if len(transcripts) > 0:
+                                transcript_text = transcripts[0]['transcript']
+                                print(f"Extracted transcript: {transcript_text[:100]}...")
+                                tags = get_text_tags(transcript_text)
+                                return tags
+                        else:
+                            print("No transcripts found in response")
+                            return []
+                except Exception as url_err:
+                    print(f"Error downloading transcript from {transcript_uri}: {url_err}")
+                    return []
             elif status == 'FAILED':
-                print(f"Transcription job failed: {response['TranscriptionJob']['FailureReason']}")
+                failure_reason = job_response['TranscriptionJob'].get('FailureReason', 'Unknown error')
+                print(f"Transcription job failed: {failure_reason}")
                 return []
             
             attempt += 1
@@ -136,6 +160,8 @@ def process_audio_file(bucket, key):
         return []
     except Exception as e:
         print(f"Audio File Processing Error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def process_video_file(bucket, key):
@@ -145,35 +171,46 @@ def process_video_file(bucket, key):
         startup()
     
     try:
+        print(f"Starting video label detection for {key}...")
         # Start label detection job for video
         client_request_token = uuid.uuid4().hex[:8]
-        response = rekognition.start_label_detection(
+        start_response = rekognition.start_label_detection(
             Video={'S3Object': {'Bucket': bucket, 'Name': key}},
             ClientRequestToken=client_request_token,
             MinConfidence=70
         )
         
-        job_id = response['JobId']
+        job_id = start_response['JobId']
+        print(f"Video label detection job started: {job_id}")
         
         # Wait for job to complete
         max_attempts = 300  # 5 minutes with 1 second intervals
         attempt = 0
         while attempt < max_attempts:
-            response = rekognition.get_label_detection(
+            job_response = rekognition.get_label_detection(
                 JobId=job_id
             )
-            status = response['JobStatus']
+            status = job_response['JobStatus']
+            
+            if attempt % 10 == 0:  # Log every 10 attempts
+                print(f"Video label detection status: {status} (attempt {attempt+1}/{max_attempts})")
             
             if status == 'SUCCEEDED':
+                print(f"Video label detection completed for {key}")
                 # Extract labels from all frames and get unique ones
                 labels_set = set()
-                for label_obj in response['Labels']:
-                    if 'Label' in label_obj:
-                        labels_set.add(label_obj['Label']['Name'])
+                if 'Labels' in job_response:
+                    for label_obj in job_response['Labels']:
+                        if 'Label' in label_obj and 'Name' in label_obj['Label']:
+                            labels_set.add(label_obj['Label']['Name'])
+                    print(f"Extracted {len(labels_set)} unique labels from video")
+                else:
+                    print("No Labels field in video response")
                 
                 return list(labels_set)[:10]  # Limit to 10 unique labels
             elif status == 'FAILED':
-                print(f"Video label detection failed: {response.get('StatusMessage', 'Unknown error')}")
+                failure_msg = job_response.get('StatusMessage', 'Unknown error')
+                print(f"Video label detection failed: {failure_msg}")
                 return []
             
             attempt += 1
@@ -183,6 +220,8 @@ def process_video_file(bucket, key):
         return []
     except Exception as e:
         print(f"Video File Processing Error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
@@ -194,6 +233,8 @@ def upload_file(file_path: str) -> str:
     key = make_key(file_name)
     file_ext = file_name.split('.')[-1].lower()
     
+    print(f"\n===== UPLOAD START: {file_name} (ext: {file_ext}) =====")
+    
     try:
         # 1. Upload to S3
         with open(file_path, "rb") as f:
@@ -204,6 +245,7 @@ def upload_file(file_path: str) -> str:
         if not content_type:
             content_type = 'application/octet-stream'
 
+        print(f"Uploading to S3: {key}")
         s3_client.put_object(
             Bucket=AWS_BUCKET, 
             Key=key, 
@@ -216,25 +258,31 @@ def upload_file(file_path: str) -> str:
             Params={'Bucket': AWS_BUCKET, 'Key': key}, 
             ExpiresIn=3600
         )
+        print(f"S3 upload complete. URL: {url[:50]}...")
         
         # 2. Get Tags based on file type & Save to DB
         tags = []
         
         if file_ext in ['jpg', 'jpeg', 'png']:
-            # Image tagging using Rekognition
+            print("Processing as IMAGE using Rekognition...")
             tags = get_ai_tags(AWS_BUCKET, key, file_ext)
         elif file_ext in ['txt', 'md']:
-            # Text tagging using Comprehend
+            print("Processing as TEXT using Comprehend...")
             tags = process_text_file(AWS_BUCKET, key)
         elif file_ext in ['mp3', 'wav']:
-            # Audio tagging using Transcribe + Comprehend
+            print("Processing as AUDIO using Transcribe...")
             tags = process_audio_file(AWS_BUCKET, key)
         elif file_ext in ['mp4', 'mov']:
-            # Video tagging using Rekognition Video
+            print("Processing as VIDEO using Rekognition Video...")
             tags = process_video_file(AWS_BUCKET, key)
+        else:
+            print(f"Unsupported file type: {file_ext}")
+        
+        print(f"Final tags extracted: {tags}")
         
         if dynamodb:
             try:
+                print(f"Saving to DynamoDB with tags: {tags}")
                 dynamodb.put_item(
                     Item={
                         'filename': key,
@@ -244,13 +292,19 @@ def upload_file(file_path: str) -> str:
                         'created_at': str(int(time.time()))
                     }
                 )
+                print("DynamoDB save successful")
             except Exception as e:
                 print(f"DB Save Error: {e}")
+                import traceback
+                traceback.print_exc()
 
+        print(f"===== UPLOAD COMPLETE: {file_name} =====\n")
         return {'key': key, 'name': file_name, 'url': url, 'tags': tags}
 
     except Exception as e:
         print(f"UPLOAD ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
 
 def list_files():
