@@ -711,7 +711,7 @@ def qwen_search_files(user_query: str):
             key = item.get('filename', '')
             original_name = item.get('original_name', key)
             tags = item.get('tags', [])
-            transcript = item.get('transcript', '')[:1500]  # Increased to 1500 chars for better context
+            transcript = item.get('transcript', '')[:3000]  # Increased to 3000 chars for better context
             
             context = f"[{idx}] File: {original_name}\n"
             if tags:

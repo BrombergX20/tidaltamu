@@ -28,9 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if(query.trim()) performQwenSearch(query);
     });
     
-    // Also allow Enter key to submit
-    document.getElementById('qwenSearchInput')?.addEventListener('keypress', (e) => {
-      if(e.key === 'Enter') qwenSearchBtn.click();
+    // Allow Enter to submit search, Shift+Enter creates new line
+    document.getElementById('qwenSearchInput')?.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        qwenSearchBtn.click();
+      }
     });
   }
 });
