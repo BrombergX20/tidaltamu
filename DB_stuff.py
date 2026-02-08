@@ -252,7 +252,7 @@ Transcript:
 Respond with ONLY a comma-separated list of tags, nothing else. Example format: Machine Learning, Data Science, Neural Networks"""
         
         response = requests.post(
-            "https://api.featherless.ai/openai/v1/chat/completions",
+            "https://api.featherless.ai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -263,7 +263,7 @@ Respond with ONLY a comma-separated list of tags, nothing else. Example format: 
                 "temperature": 0.3,  # Lower temperature for more focused output
                 "max_tokens": 200
             },
-            timeout=30
+            timeout=60
         )
         
         if response.status_code == 200:
