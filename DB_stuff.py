@@ -67,3 +67,39 @@ def upload_file(file_path: str) -> str:
     except Exception as e:
         print(f"UPLOAD ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
+    
+
+def list_files():
+    startup() # Ensure connected
+    try:
+        response = s3_client.list_objects_v2(Bucket=AWS_BUCKET)
+        
+        files = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                key = obj['Key']
+                # Generate a temporary link (valid for 1 hour)
+                url = s3_client.generate_presigned_url(
+                    'get_object', 
+                    Params={'Bucket': AWS_BUCKET, 'Key': key}, 
+                    ExpiresIn=3600
+                )
+                
+                # Try to clean up the name (remove the timestamp/UUID prefix)
+                # Key format is: time_uuid_filename
+                try:
+                    clean_name = key.split('_', 2)[-1]
+                except:
+                    clean_name = key
+
+                files.append({
+                    "key": key,
+                    "name": clean_name,
+                    "url": url,
+                    "size": obj['Size']
+                })
+        return files
+        
+    except Exception as e:
+        print(f"LIST ERROR: {str(e)}")
+        return []
