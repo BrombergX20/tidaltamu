@@ -2,57 +2,80 @@ import boto3
 import os
 import time
 import uuid
-import mimetypes
 from fastapi import HTTPException
 from dotenv import load_dotenv
+from boto3.dynamodb.conditions import Attr
 
-# Load variables from .env
 load_dotenv()
 
 # Global variables
 s3_client = None
+rekognition = None
+dynamodb = None
 AWS_BUCKET = None
 
 def make_key(filename: str) -> str:
     return f"{int(time.time())}_{uuid.uuid4().hex}_{filename}"
 
 def startup():
-    global s3_client, AWS_BUCKET
+    global s3_client, AWS_BUCKET, rekognition, dynamodb
     
-    # 1. Get Settings
-    AWS_REGION = os.getenv("S3_REGION")
+    AWS_REGION = os.getenv("S3_REGION", "us-east-1")
     AWS_BUCKET = os.getenv("BUCKET_NAME")
 
     if not AWS_BUCKET:
         print("CRITICAL ERROR: AWS_BUCKET not found. Check .env file.")
 
-    # 2. Connect to S3 (Using EC2 Role - No manual keys!)
     if s3_client is None:
         try:
+            # 1. Connect to S3
             s3_client = boto3.client('s3', region_name=AWS_REGION)
-            print(f"S3 Connection Initialized. Bucket: {AWS_BUCKET}")
+            
+            # 2. Connect to Rekognition (AI)
+            rekognition = boto3.client('rekognition', region_name=AWS_REGION)
+            
+            # 3. Connect to DynamoDB (Database)
+            dynamo_resource = boto3.resource('dynamodb', region_name=AWS_REGION)
+            dynamodb = dynamo_resource.Table('MediaTags')
+            
+            print(f"AWS Services Initialized. Bucket: {AWS_BUCKET}")
         except Exception as e:
-            print(f"Failed to connect to S3: {e}")
+            print(f"Failed to connect to AWS: {e}")
+
+def get_ai_tags(bucket, key, file_ext):
+    """Helper: Asks AWS Rekognition what is in the image"""
+    if file_ext not in ['jpg', 'jpeg', 'png']:
+        return [] 
+
+    try:
+        response = rekognition.detect_labels(
+            Image={'S3Object': {'Bucket': bucket, 'Name': key}},
+            MaxLabels=5,
+            MinConfidence=80
+        )
+        return [label['Name'] for label in response['Labels']]
+    except Exception as e:
+        print(f"AI Tagging Error: {e}")
+        return []
 
 def upload_file(file_path: str) -> str:
-    global s3_client, AWS_BUCKET
+    global s3_client, AWS_BUCKET, dynamodb
     if s3_client is None: startup()
         
     file_name = file_path.split('/')[-1]
     key = make_key(file_name)
+    file_ext = file_name.split('.')[-1].lower()
     
     try:
-        # FIX 1: Open in Binary Mode ("rb") prevents PDF crashes
+        # 1. Upload to S3 (Binary Mode)
         with open(file_path, "rb") as f:
             contents = f.read()
 
-        # determine a proper MIME content type for the object
-        content_type = mimetypes.guess_type(file_name)[0] or 'application/octet-stream'
         s3_client.put_object(
-            Bucket=AWS_BUCKET,
-            Key=key,
-            Body=contents,
-            ContentType=content_type
+            Bucket=AWS_BUCKET, 
+            Key=key, 
+            Body=contents, 
+            ContentType=file_ext
         )
         
         url = s3_client.generate_presigned_url(
@@ -61,21 +84,38 @@ def upload_file(file_path: str) -> str:
             ExpiresIn=3600
         )
         
-        return {'key': key, 'name': file_name, 'url': url, 'content_type': content_type}
+        # 2. Ask AI for Tags
+        tags = get_ai_tags(AWS_BUCKET, key, file_ext)
+        
+        # 3. Save to DynamoDB
+        if dynamodb:
+            try:
+                dynamodb.put_item(
+                    Item={
+                        'filename': key,
+                        'original_name': file_name,
+                        'url': url,
+                        'tags': tags,
+                        'created_at': str(int(time.time()))
+                    }
+                )
+            except Exception as e:
+                print(f"DB Save Error: {e}")
+
+        return {'key': key, 'name': file_name, 'url': url, 'tags': tags}
 
     except Exception as e:
         print(f"UPLOAD ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
 
-# FIX 3: Renamed from get_files to list_files to match api.py
 def list_files():
+    # Lists files from S3
     global s3_client, AWS_BUCKET
     if s3_client is None: startup()
 
     try:
         response = s3_client.list_objects_v2(Bucket=AWS_BUCKET)
         files = []
-        
         if 'Contents' in response:
             for obj in response['Contents']:
                 key = obj['Key']
@@ -84,18 +124,25 @@ def list_files():
                     Params={'Bucket': AWS_BUCKET, 'Key': key}, 
                     ExpiresIn=3600
                 )
-                
-                try:
-                    display_name = key.split('_', 2)[-1]
-                except:
-                    display_name = key
+                try: display_name = key.split('_', 2)[-1]
+                except: display_name = key
 
-                files.append({
-                    "name": display_name,
-                    "url": url,
-                    "size": obj['Size']
-                })
+                files.append({"name": display_name, "url": url, "size": obj['Size']})
         return files
     except Exception as e:
         print(f"LIST ERROR: {e}")
+        return []
+
+def search_files(query: str):
+    # Searches DynamoDB
+    global dynamodb
+    if dynamodb is None: startup()
+    
+    try:
+        response = dynamodb.scan(
+            FilterExpression=Attr('tags').contains(query) | Attr('original_name').contains(query)
+        )
+        return response.get('Items', [])
+    except Exception as e:
+        print(f"Search Error: {e}")
         return []

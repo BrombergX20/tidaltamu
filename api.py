@@ -4,12 +4,11 @@ from contextlib import asynccontextmanager
 import os
 
 # Import functions from DB_stuff
-from DB_stuff import upload_file, list_files
+from DB_stuff import upload_file, list_files, search_files
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Server...")
-    # Create temp folders
     os.makedirs("temp/files/", exist_ok=True)
     os.makedirs("temp/videos/", exist_ok=True)
     os.makedirs("temp/audios/", exist_ok=True)
@@ -26,7 +25,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. UPLOAD ROUTE
 @app.post("/add_doc")
 async def add_doc(file: UploadFile = File(...), type: str = Form(...)):
     # Determine folder based on type
@@ -42,18 +40,20 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...)):
     with open(save_path, "wb") as f:
         f.write(await file.read())
     
-    # Upload to S3
+    # Upload to S3 (Triggers AI + DB)
     try:
         result = upload_file(save_path)
         return {"message": "Success", "data": result}
     except Exception as e:
         return {"message": "Failed", "error": str(e)}
     finally:
-        # Cleanup
         if os.path.exists(save_path):
             os.remove(save_path)
 
-# 2. LIST FILES ROUTE (This was missing or broken)
 @app.get("/list_docs")
 async def get_all_docs():
     return list_files()
+
+@app.get("/search")
+async def search_docs(q: str):
+    return search_files(q)
