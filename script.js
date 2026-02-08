@@ -1,5 +1,5 @@
 // const API_BASE = (typeof window !== 'undefined' && (window.API_BASE || window.__API_BASE__)) ? (window.API_BASE || window.__API_BASE__) : '';
-const API_BASE = "https://ec2-44-243-17-123.us-west-2.compute.amazonaws.com"
+const API_BASE = "http://ec2-44-243-17-123.us-west-2.compute.amazonaws.com:8000"
 
 // Highlight active nav tab
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,7 +17,7 @@ async function saveFileToServer(file){
   console.log(API_BASE);
   const fd = new FormData();
   fd.append('file', file, file.name);
-  const resp = await fetch(API_BASE + '/upload', { method: 'POST', body: fd });
+  const resp = await fetch(API_BASE + '/add_doc', { method: 'POST', body: fd });
   const ct = resp.headers.get('content-type') || '';
   const bodyText = await resp.text();
   if(!resp.ok){
