@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>History searcher — Search</title>
+    <title>FileMind — Search</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">History searcher</div>
+      <div class="brand">FileMind</div>
       <nav class="nav">
         <a href="index.html">Home</a>
         <a href="upload.html">Upload</a>
@@ -23,6 +23,7 @@
         <p style="color: #aaa; font-size: 14px;">Describe what you're looking for in natural language. The AI will search through all file content and transcripts to find matching files.</p>
         <textarea id="qwenSearchInput" placeholder="E.g., 'Files about machine learning' or 'Videos discussing climate change'" style="width: 100%; height: 80px; padding: 8px; margin-bottom: 10px; font-family: Arial, sans-serif;"></textarea>
         <button id="qwenSearchBtn" style="padding: 8px 20px; background: #0099ff; color: white; border: none; cursor: pointer; border-radius: 4px;">Search</button>
+        <div class="throbber" id="searchThrobber"></div>
         <ul id="qwenSearchResults" class="list" style="margin-top: 20px;"></ul>
       </section>
     </main>

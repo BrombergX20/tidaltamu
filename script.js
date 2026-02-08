@@ -39,11 +39,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupUpload() {
   const form = document.getElementById('uploadForm');
   const fileInput = document.getElementById('fileInput');
+  const uploadThrobber = document.getElementById('uploadThrobber');
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const files = fileInput.files;
     if(files.length === 0) return alert("Please select a file.");
+
+    uploadThrobber.classList.add('active');
 
     for(const file of files) {
       const fd = new FormData();
@@ -64,6 +67,7 @@ function setupUpload() {
     }
     alert("Upload(s) Complete!");
     fileInput.value = ''; // Reset input
+    uploadThrobber.classList.remove('active');
   });
 }
 
@@ -208,9 +212,11 @@ function filterSavedList(query) {
 // Qwen-powered natural language search
 async function performQwenSearch(query) {
   const ul = document.getElementById('qwenSearchResults');
+  const searchThrobber = document.getElementById('searchThrobber');
   if(!ul) return;
   
   ul.innerHTML = '<li style="color:#ffaa00">Searching with Qwen...</li>';
+  searchThrobber.classList.add('active');
   
   try {
     const resp = await fetch(API_BASE + '/qwen_search', {
@@ -221,6 +227,7 @@ async function performQwenSearch(query) {
     
     const data = await resp.json();
     ul.innerHTML = '';
+    searchThrobber.classList.remove('active');
     
     if(!data.success || !data.files || data.files.length === 0) {
       ul.innerHTML = '<li style="color:gray">No matching files found.</li>';
@@ -260,6 +267,7 @@ async function performQwenSearch(query) {
   } catch(err) {
     console.error('Qwen search error:', err);
     ul.innerHTML = `<li style="color:red">Search error: ${err.message}</li>`;
+    searchThrobber.classList.remove('active');
   }
 }
 

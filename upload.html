@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>History searcher — Upload</title>
+    <title>FileMind — Upload</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">History searcher</div>
+      <div class="brand">FileMind</div>
       <nav class="nav">
         <a href="index.html">Home</a>
         <a href="upload.html">Upload</a>
@@ -23,6 +23,7 @@
         <form id="uploadForm">
           <input type="file" id="fileInput" multiple>
           <button type="submit">Save to backend</button>
+          <div class="throbber" id="uploadThrobber"></div>
         </form>
       </section>
     </main>
