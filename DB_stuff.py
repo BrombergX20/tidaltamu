@@ -5,6 +5,7 @@ import uuid
 import mimetypes
 import json
 import urllib.request
+import threading
 from fastapi import HTTPException
 from dotenv import load_dotenv
 from boto3.dynamodb.conditions import Attr
@@ -21,6 +22,117 @@ AWS_BUCKET = None
 
 def make_key(filename: str) -> str:
     return f"{int(time.time())}_{uuid.uuid4().hex}_{filename}"
+
+def process_transcription_job_background(job_name, bucket, file_key, db_item_key):
+    """Background task: Poll transcription job and update DynamoDB when complete"""
+    print(f"[BACKGROUND] Monitoring transcription job: {job_name}")
+    try:
+        max_attempts = 720  # 12 hours (polling every 60 seconds)
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                job_response = transcribe.get_transcription_job(
+                    TranscriptionJobName=job_name
+                )
+                status = job_response['TranscriptionJob']['TranscriptionJobStatus']
+                
+                if attempt % 5 == 0:  # Log every 5 polls (5 minutes)
+                    print(f"[BACKGROUND] Transcription status: {status} (elapsed: {attempt*60}s)")
+                
+                if status == 'COMPLETED':
+                    print(f"[BACKGROUND] Transcription completed: {job_name}")
+                    transcript_uri = job_response['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                    
+                    try:
+                        with urllib.request.urlopen(transcript_uri) as url_response:
+                            transcript_json = json.loads(url_response.read().decode('utf-8'))
+                            if 'results' in transcript_json and 'transcripts' in transcript_json['results']:
+                                transcripts = transcript_json['results']['transcripts']
+                                if len(transcripts) > 0:
+                                    transcript_text = transcripts[0]['transcript']
+                                    print(f"[BACKGROUND] Extracted transcript ({len(transcript_text)} chars)")
+                                    tags = get_text_tags(transcript_text)
+                                    
+                                    # Update DynamoDB with tags
+                                    if dynamodb:
+                                        dynamodb.update_item(
+                                            Key={'filename': db_item_key},
+                                            UpdateExpression='SET tags = :tags',
+                                            ExpressionAttributeValues={':tags': tags}
+                                        )
+                                        print(f"[BACKGROUND] Updated DynamoDB with {len(tags)} tags")
+                                    return
+                    except Exception as e:
+                        print(f"[BACKGROUND] Error processing transcript: {e}")
+                        return
+                        
+                elif status == 'FAILED':
+                    print(f"[BACKGROUND] Transcription failed: {job_response['TranscriptionJob'].get('FailureReason', 'Unknown')}")
+                    return
+                
+            except Exception as e:
+                print(f"[BACKGROUND] Error polling job: {e}")
+            
+            attempt += 1
+            time.sleep(60)  # Poll every 60 seconds
+        
+        print(f"[BACKGROUND] Transcription job timed out: {job_name}")
+    except Exception as e:
+        print(f"[BACKGROUND] Fatal error in transcription background task: {e}")
+        import traceback
+        traceback.print_exc()
+
+def process_video_job_background(job_id, db_item_key):
+    """Background task: Poll video label detection job and update DynamoDB when complete"""
+    print(f"[BACKGROUND] Monitoring video job: {job_id}")
+    try:
+        max_attempts = 600  # 10 hours (polling every 60 seconds)
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                job_response = rekognition.get_label_detection(JobId=job_id)
+                status = job_response['JobStatus']
+                
+                if attempt % 5 == 0:  # Log every 5 polls (5 minutes)
+                    print(f"[BACKGROUND] Video label detection status: {status} (elapsed: {attempt*60}s)")
+                
+                if status == 'SUCCEEDED':
+                    print(f"[BACKGROUND] Video label detection completed: {job_id}")
+                    labels_set = set()
+                    if 'Labels' in job_response:
+                        for label_obj in job_response['Labels']:
+                            if 'Label' in label_obj and 'Name' in label_obj['Label']:
+                                labels_set.add(label_obj['Label']['Name'])
+                    labels_list = list(labels_set)[:10]
+                    print(f"[BACKGROUND] Extracted {len(labels_list)} labels from video")
+                    
+                    # Update DynamoDB with tags
+                    if dynamodb:
+                        dynamodb.update_item(
+                            Key={'filename': db_item_key},
+                            UpdateExpression='SET tags = :tags',
+                            ExpressionAttributeValues={':tags': labels_list}
+                        )
+                        print(f"[BACKGROUND] Updated DynamoDB with video labels")
+                    return
+                    
+                elif status == 'FAILED':
+                    print(f"[BACKGROUND] Video job failed: {job_response.get('StatusMessage', 'Unknown')}")
+                    return
+                    
+            except Exception as e:
+                print(f"[BACKGROUND] Error polling video job: {e}")
+            
+            attempt += 1
+            time.sleep(60)  # Poll every 60 seconds
+        
+        print(f"[BACKGROUND] Video job timed out: {job_id}")
+    except Exception as e:
+        print(f"[BACKGROUND] Fatal error in video background task: {e}")
+        import traceback
+        traceback.print_exc()
 
 def startup():
     global s3_client, AWS_BUCKET, rekognition, comprehend, transcribe, dynamodb
@@ -101,8 +213,8 @@ def process_text_file(bucket, key):
         traceback.print_exc()
         return []
 
-def process_audio_file(bucket, key):
-    """Start AWS Transcribe job, wait for completion, and extract tags"""
+def process_audio_file(bucket, key, db_item_key):
+    """Start AWS Transcribe job asynchronously and return immediately"""
     global transcribe, s3_client
     if transcribe is None:
         startup()
@@ -114,112 +226,56 @@ def process_audio_file(bucket, key):
         transcribe.start_transcription_job(
             TranscriptionJobName=job_name,
             Media={'S3Object': {'Bucket': bucket, 'Key': key}},
-            MediaFormat=key.split('.')[-1].lower(),  # mp3, wav, etc.
+            MediaFormat=key.split('.')[-1].lower(),
             LanguageCode='en-US'
         )
+        print(f"Transcription job started: {job_name}")
         
-        # Wait for job to complete
-        max_attempts = 60
-        attempt = 0
-        while attempt < max_attempts:
-            job_response = transcribe.get_transcription_job(
-                TranscriptionJobName=job_name
-            )
-            status = job_response['TranscriptionJob']['TranscriptionJobStatus']
-            print(f"Transcription status: {status} (attempt {attempt+1}/{max_attempts})")
-            
-            if status == 'COMPLETED':
-                print(f"Transcription completed for {key}")
-                # Download the transcript JSON
-                transcript_uri = job_response['TranscriptionJob']['Transcript']['TranscriptFileUri']
-                try:
-                    with urllib.request.urlopen(transcript_uri) as url_response:
-                        transcript_json = json.loads(url_response.read().decode('utf-8'))
-                        if 'results' in transcript_json and 'transcripts' in transcript_json['results']:
-                            transcripts = transcript_json['results']['transcripts']
-                            if len(transcripts) > 0:
-                                transcript_text = transcripts[0]['transcript']
-                                print(f"Extracted transcript: {transcript_text[:100]}...")
-                                tags = get_text_tags(transcript_text)
-                                return tags
-                        else:
-                            print("No transcripts found in response")
-                            return []
-                except Exception as url_err:
-                    print(f"Error downloading transcript from {transcript_uri}: {url_err}")
-                    return []
-            elif status == 'FAILED':
-                failure_reason = job_response['TranscriptionJob'].get('FailureReason', 'Unknown error')
-                print(f"Transcription job failed: {failure_reason}")
-                return []
-            
-            attempt += 1
-            time.sleep(1)
+        # Launch background thread to monitor job
+        bg_thread = threading.Thread(
+            target=process_transcription_job_background,
+            args=(job_name, bucket, key, db_item_key),
+            daemon=True
+        )
+        bg_thread.start()
         
-        print("Transcription job timed out")
+        # Return immediately with empty tags (will be filled by background task)
         return []
     except Exception as e:
-        print(f"Audio File Processing Error: {e}")
+        print(f"Error starting transcription job: {e}")
         import traceback
         traceback.print_exc()
         return []
 
-def process_video_file(bucket, key):
-    """Start AWS Rekognition Video job, wait for completion, and extract labels"""
+def process_video_file(bucket, key, db_item_key):
+    """Start AWS Rekognition Video job asynchronously and return immediately"""
     global rekognition
     if rekognition is None:
         startup()
     
     try:
         print(f"Starting video label detection for {key}...")
-        # Start label detection job for video
         client_request_token = uuid.uuid4().hex[:8]
         start_response = rekognition.start_label_detection(
             Video={'S3Object': {'Bucket': bucket, 'Name': key}},
             ClientRequestToken=client_request_token,
             MinConfidence=70
         )
-        
         job_id = start_response['JobId']
         print(f"Video label detection job started: {job_id}")
         
-        # Wait for job to complete
-        max_attempts = 300  # 5 minutes with 1 second intervals
-        attempt = 0
-        while attempt < max_attempts:
-            job_response = rekognition.get_label_detection(
-                JobId=job_id
-            )
-            status = job_response['JobStatus']
-            
-            if attempt % 10 == 0:  # Log every 10 attempts
-                print(f"Video label detection status: {status} (attempt {attempt+1}/{max_attempts})")
-            
-            if status == 'SUCCEEDED':
-                print(f"Video label detection completed for {key}")
-                # Extract labels from all frames and get unique ones
-                labels_set = set()
-                if 'Labels' in job_response:
-                    for label_obj in job_response['Labels']:
-                        if 'Label' in label_obj and 'Name' in label_obj['Label']:
-                            labels_set.add(label_obj['Label']['Name'])
-                    print(f"Extracted {len(labels_set)} unique labels from video")
-                else:
-                    print("No Labels field in video response")
-                
-                return list(labels_set)[:10]  # Limit to 10 unique labels
-            elif status == 'FAILED':
-                failure_msg = job_response.get('StatusMessage', 'Unknown error')
-                print(f"Video label detection failed: {failure_msg}")
-                return []
-            
-            attempt += 1
-            time.sleep(1)
+        # Launch background thread to monitor job
+        bg_thread = threading.Thread(
+            target=process_video_job_background,
+            args=(job_id, db_item_key),
+            daemon=True
+        )
+        bg_thread.start()
         
-        print("Video label detection job timed out")
+        # Return immediately with empty tags (will be filled by background task)
         return []
     except Exception as e:
-        print(f"Video File Processing Error: {e}")
+        print(f"Error starting video job: {e}")
         import traceback
         traceback.print_exc()
         return []
@@ -270,11 +326,11 @@ def upload_file(file_path: str) -> str:
             print("Processing as TEXT using Comprehend...")
             tags = process_text_file(AWS_BUCKET, key)
         elif file_ext in ['mp3', 'wav']:
-            print("Processing as AUDIO using Transcribe...")
-            tags = process_audio_file(AWS_BUCKET, key)
+            print("Processing as AUDIO using Transcribe (background task)...")
+            tags = process_audio_file(AWS_BUCKET, key, key)
         elif file_ext in ['mp4', 'mov']:
-            print("Processing as VIDEO using Rekognition Video...")
-            tags = process_video_file(AWS_BUCKET, key)
+            print("Processing as VIDEO using Rekognition Video (background task)...")
+            tags = process_video_file(AWS_BUCKET, key, key)
         else:
             print(f"Unsupported file type: {file_ext}")
         

@@ -7,7 +7,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Auto-run logic based on page
-  if(document.getElementById('savedList')) refreshSavedList();
+  if(document.getElementById('savedList')) {
+    refreshSavedList();
+    // Auto-refresh saved list every 30 seconds to pick up new tags
+    setInterval(refreshSavedList, 30000);
+  }
   if(document.getElementById('uploadForm')) setupUpload();
   
   // NEW: Search Logic
@@ -85,8 +89,15 @@ async function refreshSavedList() {
           meta.style.color = '#4ea8ff'; // Blue
           meta.textContent = "Tags: " + f.tags.join(', ');
       } else {
-          meta.style.color = '#777';
-          meta.textContent = "No tags";
+          // Check if file is audio/video (likely being processed)
+          const isAudioOrVideo = /\.(mp3|wav|mp4|mov|avi|mkv|aac)$/i.test(f.name);
+          if (isAudioOrVideo) {
+              meta.style.color = '#ffaa00'; // Orange for "processing"
+              meta.textContent = "⏳ Processing tags (audio/video can take 5-15 minutes)...";
+          } else {
+              meta.style.color = '#777';
+              meta.textContent = "No tags";
+          }
       }
       
       left.appendChild(title);
