@@ -109,33 +109,38 @@ def upload_file(file_path: str) -> str:
         raise HTTPException(status_code=500, detail=f'Upload failed: {e}')
 
 def list_files():
-    # Lists files from S3
-    global s3_client, AWS_BUCKET
-    if s3_client is None: startup()
-
+    # NEW: Fetch from DynamoDB so we can see Tags
+    global dynamodb, s3_client, AWS_BUCKET
+    if dynamodb is None: startup()
+    
     try:
-        response = s3_client.list_objects_v2(Bucket=AWS_BUCKET)
-        files = []
-        if 'Contents' in response:
-            for obj in response['Contents']:
-                key = obj['Key']
-                url = s3_client.generate_presigned_url(
-                    'get_object', 
-                    Params={'Bucket': AWS_BUCKET, 'Key': key}, 
-                    ExpiresIn=3600
-                )
-                try: display_name = key.split('_', 2)[-1]
-                except: display_name = key
-
-                files.append({
-                    "key": key,
-                    "name": display_name,
-                    "url": url,
-                    "size": obj['Size']
-                })
-        return files
+        # 1. Get all metadata from Database
+        response = dynamodb.scan()
+        items = response.get('Items', [])
+        
+        # 2. Fix the URLs (The one in DB might be expired, so we generate a fresh one)
+        final_list = []
+        for item in items:
+            key = item['filename']
+            fresh_url = s3_client.generate_presigned_url(
+                'get_object', 
+                Params={'Bucket': AWS_BUCKET, 'Key': key}, 
+                ExpiresIn=3600
+            )
+            
+            # Format for frontend
+            final_list.append({
+                "name": item.get('original_name', key),
+                "key": key,
+                "url": fresh_url,
+                "tags": item.get('tags', []),
+                "size": 0 # DB doesn't track size by default, but that's okay
+            })
+            
+        return final_list
+        
     except Exception as e:
-        print(f"LIST ERROR: {e}")
+        print(f"DB LIST ERROR: {e}")
         return []
 
 def search_files(query: str):

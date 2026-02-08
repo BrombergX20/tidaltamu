@@ -55,35 +55,50 @@ async function refreshSavedList() {
   const ul = document.getElementById('savedList');
   if (!ul) return;
 
-  ul.innerHTML = '<li style="color:white">Loading files from Cloud...</li>';
+  ul.innerHTML = '<li style="color:white">Loading files from Database...</li>';
 
   try {
     const resp = await fetch(API_BASE + '/list_docs');
     const files = await resp.json();
-    ul.innerHTML = ''; // Clear loading text
+    ul.innerHTML = ''; 
 
     if (files.length === 0) {
-      ul.innerHTML = '<li style="color:gray">No files found in bucket.</li>';
+      ul.innerHTML = '<li style="color:gray">No files found in database. Upload new files to see them here!</li>';
       return;
     }
 
     files.forEach(f => {
       const li = document.createElement('li');
       
-      // File Info Area
+      // Left Side: Name + Tags
       const left = document.createElement('div');
+      
+      // 1. File Name
       const title = document.createElement('div');
       title.textContent = f.name;
       title.style.fontWeight = 'bold';
       title.style.color = 'white';
-      
+      title.style.marginBottom = '4px';
+
+      // 2. Tags (NEW FEATURE)
       const meta = document.createElement('div');
       meta.style.fontSize = '12px';
-      meta.style.color = '#aaa';
-      meta.textContent = `Size: ${(f.size / 1024).toFixed(1)} KB`;
+      
+      if (f.tags && f.tags.length > 0) {
+          meta.style.color = '#4ea8ff'; // Blue color for tags
+          meta.textContent = "Tags: " + f.tags.join(', ');
+      } else {
+          meta.style.color = '#666';
+          meta.textContent = "No tags (or not an image)";
+      }
       
       left.appendChild(title);
       left.appendChild(meta);
+
+      // Right Side: Buttons
+      const btnGroup = document.createElement('div');
+      btnGroup.style.display = 'flex';
+      btnGroup.style.gap = '10px';
 
       // View Button
       const btn = document.createElement('button');
@@ -92,47 +107,26 @@ async function refreshSavedList() {
       btn.style.cursor = 'pointer';
       btn.onclick = () => window.open(f.url, '_blank');
 
-      // Remove Button: deletes from S3 and localStorage
-      const removeBtn = document.createElement('button');
-      removeBtn.textContent = 'Remove';
-      removeBtn.style.marginLeft = '8px';
-      removeBtn.style.padding = '5px 12px';
-      removeBtn.style.background = '#e02424';
-      removeBtn.style.color = 'white';
-      removeBtn.style.cursor = 'pointer';
-      removeBtn.onclick = async () => {
-        if(!confirm(`Remove "${f.name}" from cloud?`)) return;
-        try{
-          const resp = await fetch(API_BASE + '/delete_doc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ key: f.key }) });
-          const j = await resp.json();
-          if(j && j.success){
-            try{ removeLocalEntriesMatching(f); }catch(e){}
-            li.remove();
-          } else {
-            alert('Failed to remove file: '+ (j && j.error ? j.error : 'unknown'));
-          }
-        }catch(err){
-          console.error('Delete error', err);
-          alert('Error deleting file');
-        }
-      };
-
-      // Buttons container
-      const btnContainer = document.createElement('div');
-      btnContainer.style.display = 'flex';
-      btnContainer.style.gap = '8px';
-      btnContainer.style.marginLeft = 'auto';
-      btnContainer.appendChild(btn);
-      btnContainer.appendChild(removeBtn);
+      // Delete Button (Optional, but good to have)
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'X';
+      delBtn.style.padding = '5px 10px';
+      delBtn.style.background = 'rgba(255,0,0,0.2)';
+      delBtn.style.color = 'red';
+      delBtn.style.border = '1px solid red';
+      delBtn.style.cursor = 'pointer';
+      // Note: Delete logic requires backend support, visual only for now
+      
+      btnGroup.appendChild(btn);
 
       li.appendChild(left);
-      li.appendChild(btnContainer);
+      li.appendChild(btnGroup);
       ul.appendChild(li);
     });
 
   } catch (err) {
     console.error(err);
-    ul.innerHTML = `<li style="color:red">Connection Error. Is Server running?</li>`;
+    ul.innerHTML = `<li style="color:red">Error loading list. Is server running?</li>`;
   }
 }
 
