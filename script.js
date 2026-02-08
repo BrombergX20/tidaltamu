@@ -17,6 +17,10 @@ async function saveFileToServer(file){
   console.log(API_BASE);
   const fd = new FormData();
   fd.append('file', file, file.name);
+  // attach detected file type so FastAPI's `type: Form(...)` receives it
+  const mt = (file.name || '').match(/\.([^.]+)$/);
+  const fileExt = mt ? mt[1].toLowerCase() : '';
+  fd.append('type', fileExt);
   const resp = await fetch(API_BASE + '/add_doc', { method: 'POST', body: fd });
   const ct = resp.headers.get('content-type') || '';
   const bodyText = await resp.text();
