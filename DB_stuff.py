@@ -2,6 +2,7 @@ import boto3
 import os
 import time
 import uuid
+import mimetypes
 from fastapi import HTTPException
 from dotenv import load_dotenv
 
@@ -45,11 +46,13 @@ def upload_file(file_path: str) -> str:
         with open(file_path, "rb") as f:
             contents = f.read()
 
+        # determine a proper MIME content type for the object
+        content_type = mimetypes.guess_type(file_name)[0] or 'application/octet-stream'
         s3_client.put_object(
-            Bucket=AWS_BUCKET, 
-            Key=key, 
-            Body=contents, 
-            ContentType=file_name.split('.')[-1]
+            Bucket=AWS_BUCKET,
+            Key=key,
+            Body=contents,
+            ContentType=content_type
         )
         
         url = s3_client.generate_presigned_url(
@@ -58,7 +61,7 @@ def upload_file(file_path: str) -> str:
             ExpiresIn=3600
         )
         
-        return {'key': key, 'name': file_name, 'url': url, 'content_type': file_name.split('.')[-1]}
+        return {'key': key, 'name': file_name, 'url': url, 'content_type': content_type}
 
     except Exception as e:
         print(f"UPLOAD ERROR: {str(e)}")
