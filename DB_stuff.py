@@ -714,40 +714,45 @@ def qwen_search_files(user_query: str):
             print("[QWEN SEARCH] No files in database")
             return []
         
-        # Build file context with transcripts and tags
+        # Build file context with transcripts and tags, numbered for easy reference
         file_context = []
-        for item in items:
+        numbered_context = []
+        for idx, item in enumerate(items):
             key = item.get('filename', '')
             original_name = item.get('original_name', key)
             tags = item.get('tags', [])
-            transcript = item.get('transcript', '')[:1000]  # Limit to 1000 chars per file
+            transcript = item.get('transcript', '')[:1500]  # Increased to 1500 chars for better context
             
-            context = f"File: {original_name}\n"
+            context = f"[{idx}] File: {original_name}\n"
             if tags:
-                context += f"Tags: {', '.join(tags)}\n"
+                context += f"    Tags: {', '.join(tags)}\n"
             if transcript:
-                context += f"Transcript (first 1000 chars): {transcript}\n"
-            context += "---\n"
+                # Show first part of transcript
+                context += f"    Transcript excerpt: {transcript[:500]}...\n"
+            context += "\n"
+            
+            numbered_context.append(context)
             
             file_context.append({
+                'idx': idx,
                 'key': key,
                 'name': original_name,
-                'tags': tags,
-                'context': context
+                'tags': tags
             })
         
-        # Build prompt for Qwen
-        all_context = "\n".join([f['context'] for f in file_context])
+        # Build prompt for Qwen - be MORE LENIENT in matching
+        all_context = "".join(numbered_context)
         
-        prompt = f"""You are a search agent. The user is looking for files matching their natural language query.
+        prompt = f"""You are a lenient search agent. The user is looking for files matching their natural language query. Be GENEROUS - include files that are even tangentially related or have semantic overlap with the query.
 
-Here is a list of all files with their metadata (name, tags, and transcript excerpts):
+Here is a numbered list of all files with their metadata:
 
 {all_context}
 
 User Query: {user_query}
 
-Your task: Identify which files match the user's query based on the content, tags, and transcripts. Return ONLY the filenames (original_name) of matching files, one per line. If no files match, return "NO_MATCHES"."""
+Your task: Identify which files match or relate to the user's query based on content, tags, and transcripts. Be lenient - include files with semantic overlap, even if not exact matches. Return ONLY the numbers (in square brackets) of matching files, one per line. For example: [0] [2] [5]
+If truly no files match, return "NO_MATCHES"."""
 
         print("[QWEN SEARCH] Sending query to Qwen...")
         
@@ -760,7 +765,7 @@ Your task: Identify which files match the user's query based on the content, tag
             json={
                 "model": "Qwen/Qwen2.5-7B-Instruct",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
+                "temperature": 0.5,  # Slightly higher for more flexible matching
                 "max_tokens": 500
             },
             timeout=60
@@ -776,13 +781,15 @@ Your task: Identify which files match the user's query based on the content, tag
                     print("[QWEN SEARCH] No matches found")
                     return []
                 
-                # Parse filenames from response
-                matched_names = [line.strip() for line in response_text.split('\n') if line.strip()]
+                # Parse indices from response (e.g., "[0]", "[2]", "[5]")
+                import re
+                indices = [int(m) for m in re.findall(r'\[(\d+)\]', response_text)]
+                print(f"[QWEN SEARCH] Matched indices: {indices}")
                 
-                # Find matching files
+                # Collect matching files by index
                 matching_files = []
                 for f in file_context:
-                    if any(name.lower() in f['name'].lower() for name in matched_names):
+                    if f['idx'] in indices:
                         matching_files.append({
                             "key": f['key'],
                             "name": f['name'],
