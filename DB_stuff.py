@@ -6,6 +6,12 @@ import mimetypes
 import json
 import urllib.request
 import threading
+import requests
+import io
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
 from fastapi import HTTPException
 from dotenv import load_dotenv
 from boto3.dynamodb.conditions import Attr
@@ -227,41 +233,58 @@ def get_ai_tags(bucket, key, file_ext):
         return []
 
 def get_text_tags(text):
-    """Extract importance-weighted tags from text using AWS Comprehend"""
-    global comprehend
-    if comprehend is None:
-        startup()
-    
+    """Extract importance-weighted tags from transcripts using Qwen 2.5-7B via Featherless API"""
     if not text or len(text.strip()) == 0:
         print("Warning: Empty text provided to get_text_tags")
         return []
     
+    api_key = os.getenv("API_KEY")
+    
     try:
-        response = comprehend.detect_key_phrases(
-            Text=text[:5000],  # Comprehend has 5000 char limit per request
-            LanguageCode='en'
+        # Truncate to first 4000 chars to respect model limits
+        text_truncated = text[:4000]
+        
+        prompt = f"""Analyze the following transcript and extract 5-8 of the MOST IMPORTANT and MEANINGFUL tags that capture the key topics, concepts, and ideas discussed. Focus on semantic importance and relevance, not just frequent words.
+
+Transcript:
+{text_truncated}
+
+Respond with ONLY a comma-separated list of tags, nothing else. Example format: Machine Learning, Data Science, Neural Networks"""
+        
+        response = requests.post(
+            "https://api.featherless.ai/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "qwen-2.5-7b",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,  # Lower temperature for more focused output
+                "max_tokens": 200
+            },
+            timeout=30
         )
         
-        # Filter by confidence score (>= 0.7) and sort by importance
-        high_confidence = [
-            phrase for phrase in response.get('KeyPhrases', [])
-            if phrase.get('Score', 0) >= 0.99
-        ]
-        
-        # Sort by confidence score (descending) to prioritize important phrases
-        sorted_tags = sorted(high_confidence, key=lambda x: x.get('Score', 0), reverse=True)
-        
-        # Extract text and limit to top 8 (more selective)
-        tags = [phrase['Text'] for phrase in sorted_tags][:8]
-        
-        print(f"Extracted {len(tags)} high-confidence tags from text via Comprehend")
-        return tags
+        if response.status_code == 200:
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                tags_text = result['choices'][0]['message']['content'].strip()
+                # Parse comma-separated tags and clean them
+                tags = [tag.strip() for tag in tags_text.split(',') if tag.strip()]
+                tags = deduplicate_tags(tags)[:8]
+                print(f"Extracted {len(tags)} importance-weighted tags from transcript via Qwen")
+                return tags
+        else:
+            print(f"Featherless API error: {response.status_code} - {response.text}")
+            return []
+            
     except Exception as e:
         print(f"Text Tagging Error: {e}")
         return []
 
 def process_text_file(bucket, key):
-    """Download text file from S3 and extract tags using Comprehend"""
+    """Download text file from S3 and extract tags using Qwen"""
     global s3_client
     if s3_client is None:
         startup()
@@ -269,13 +292,52 @@ def process_text_file(bucket, key):
     try:
         print(f"Processing text file {key}...")
         response = s3_client.get_object(Bucket=bucket, Key=key)
-        text_content = response['Body'].read().decode('utf-8')
+        text_content = response['Body'].read().decode('utf-8', errors='ignore')
         print(f"Text file read: {len(text_content)} characters")
         tags = get_text_tags(text_content)
         print(f"Text file tags: {tags}")
         return tags
     except Exception as e:
         print(f"Text File Processing Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+def process_pdf_file(bucket, key):
+    """Download PDF from S3, extract text, and send to Qwen for tags"""
+    global s3_client
+    if s3_client is None:
+        startup()
+    
+    if PdfReader is None:
+        print("PDF processing not available (pypdf not installed)")
+        return []
+    
+    try:
+        print(f"Processing PDF file {key}...")
+        response = s3_client.get_object(Bucket=bucket, Key=key)
+        pdf_bytes = response['Body'].read()
+        
+        # Extract text from PDF
+        try:
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            text_content = ""
+            for page in pdf_reader.pages:
+                text_content += page.extract_text() + " "
+        except Exception as pdf_err:
+            print(f"Error extracting text from PDF: {pdf_err}")
+            return []
+        
+        if not text_content.strip():
+            print("PDF contains no extractable text")
+            return []
+        
+        print(f"PDF text extracted: {len(text_content)} characters")
+        tags = get_text_tags(text_content)
+        print(f"PDF tags: {tags}")
+        return tags
+    except Exception as e:
+        print(f"PDF Processing Error: {e}")
         import traceback
         traceback.print_exc()
         return []
@@ -414,8 +476,11 @@ def upload_file(file_path: str) -> str:
             print("Processing as IMAGE using Rekognition...")
             tags = get_ai_tags(AWS_BUCKET, key, file_ext)
         elif file_ext in ['txt', 'md']:
-            print("Processing as TEXT using Comprehend...")
+            print("Processing as TEXT using Qwen...")
             tags = process_text_file(AWS_BUCKET, key)
+        elif file_ext in ['pdf']:
+            print("Processing as PDF using Qwen...")
+            tags = process_pdf_file(AWS_BUCKET, key)
         elif file_ext in ['mp3', 'wav']:
             print("Processing as AUDIO using Transcribe (background task)...")
             tags = process_audio_file(AWS_BUCKET, key, key)
