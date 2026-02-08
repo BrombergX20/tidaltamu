@@ -1,5 +1,5 @@
 // const API_BASE = (typeof window !== 'undefined' && (window.API_BASE || window.__API_BASE__)) ? (window.API_BASE || window.__API_BASE__) : '';
-const API_BASE = "http://ec2-44-252-41-71.us-west-2.compute.amazonaws.com/upload"
+const API_BASE = "https://ec2-44-252-41-71.us-west-2.compute.amazonaws.com/upload"
 
 
 
