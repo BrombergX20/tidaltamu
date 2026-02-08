@@ -116,7 +116,21 @@ async function refreshSavedList() {
       btn.style.marginRight = '10px';
       btn.onclick = () => window.open(f.url, '_blank');
 
-      // 2. Delete Button (RESTORED)
+      // 2. Transcript Button (for audio/video only)
+      if(f.is_audio_or_video) {
+        const transcriptBtn = document.createElement('button');
+        transcriptBtn.textContent = 'View Transcript';
+        transcriptBtn.style.background = '#0099ff';
+        transcriptBtn.style.color = 'white';
+        transcriptBtn.style.border = 'none';
+        transcriptBtn.style.padding = '5px 12px';
+        transcriptBtn.style.cursor = 'pointer';
+        transcriptBtn.style.marginRight = '10px';
+        transcriptBtn.onclick = () => showTranscriptModal(f.key, f.name);
+        right.appendChild(transcriptBtn);
+      }
+
+      // 3. Delete Button (RESTORED)
       const removeBtn = document.createElement('button');
       removeBtn.textContent = 'Delete';
       removeBtn.style.background = '#ff4444';
@@ -216,6 +230,95 @@ async function refreshSearchResults(query) {
   } catch(err) {
       console.error(err);
       ul.innerHTML = '<li style="color:red">Search Error</li>';
+  }
+}
+
+// 5. Transcript Viewer Modal
+async function showTranscriptModal(key, fileName) {
+  try {
+    // Fetch transcript from backend
+    const resp = await fetch(API_BASE + '/get_transcript', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ key: key })
+    });
+    
+    const data = await resp.json();
+    
+    if (!data.success) {
+      alert('Error loading transcript: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.zIndex = '9999';
+    
+    const modalContent = document.createElement('div');
+    modalContent.style.backgroundColor = '#222';
+    modalContent.style.color = '#fff';
+    modalContent.style.padding = '30px';
+    modalContent.style.borderRadius = '10px';
+    modalContent.style.maxWidth = '700px';
+    modalContent.style.maxHeight = '80vh';
+    modalContent.style.overflow = 'auto';
+    modalContent.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
+    
+    // Title
+    const title = document.createElement('h2');
+    title.textContent = 'Transcript: ' + fileName;
+    title.style.marginTop = '0';
+    title.style.marginBottom = '20px';
+    title.style.color = '#4ea8ff';
+    modalContent.appendChild(title);
+    
+    // Transcript text
+    const transcriptDiv = document.createElement('div');
+    if (data.transcript && data.transcript.length > 0) {
+      transcriptDiv.textContent = data.transcript;
+      transcriptDiv.style.lineHeight = '1.6';
+      transcriptDiv.style.whiteSpace = 'pre-wrap';
+      transcriptDiv.style.wordWrap = 'break-word';
+    } else {
+      transcriptDiv.textContent = '⏳ Transcript is being processed. Please check back later. Audio/video transcription can take 5-15 minutes.';
+      transcriptDiv.style.color = '#ffaa00';
+      transcriptDiv.style.fontStyle = 'italic';
+    }
+    modalContent.appendChild(transcriptDiv);
+    
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.marginTop = '20px';
+    closeBtn.style.padding = '10px 20px';
+    closeBtn.style.backgroundColor = '#444';
+    closeBtn.style.color = '#fff';
+    closeBtn.style.border = 'none';
+    closeBtn.style.borderRadius = '5px';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.onclick = () => modal.remove();
+    modalContent.appendChild(closeBtn);
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Close on background click
+    modal.onclick = (e) => {
+      if (e.target === modal) modal.remove();
+    };
+    
+  } catch (err) {
+    console.error('Error fetching transcript:', err);
+    alert('Failed to load transcript');
   }
 }
 

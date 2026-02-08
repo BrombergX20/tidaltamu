@@ -54,14 +54,17 @@ def process_transcription_job_background(job_name, bucket, file_key, db_item_key
                                     print(f"[BACKGROUND] Extracted transcript ({len(transcript_text)} chars)")
                                     tags = get_text_tags(transcript_text)
                                     
-                                    # Update DynamoDB with tags
+                                    # Update DynamoDB with tags AND transcript
                                     if dynamodb:
                                         dynamodb.update_item(
                                             Key={'filename': db_item_key},
-                                            UpdateExpression='SET tags = :tags',
-                                            ExpressionAttributeValues={':tags': tags}
+                                            UpdateExpression='SET tags = :tags, transcript = :transcript',
+                                            ExpressionAttributeValues={
+                                                ':tags': tags,
+                                                ':transcript': transcript_text
+                                            }
                                         )
-                                        print(f"[BACKGROUND] Updated DynamoDB with {len(tags)} tags")
+                                        print(f"[BACKGROUND] Updated DynamoDB with {len(tags)} tags and transcript")
                                     return
                     except Exception as e:
                         print(f"[BACKGROUND] Error processing transcript: {e}")
@@ -345,6 +348,7 @@ def upload_file(file_path: str) -> str:
                         'original_name': file_name,
                         'url': url,
                         'tags': tags,
+                        'transcript': '',  # Will be filled in by background task for audio/video
                         'created_at': str(int(time.time()))
                     }
                 )
@@ -375,6 +379,9 @@ def list_files():
         final_list = []
         for item in items:
             key = item['filename']
+            original_name = item.get('original_name', key)
+            file_ext = original_name.split('.')[-1].lower()
+            
             # Generate fresh URL
             fresh_url = s3_client.generate_presigned_url(
                 'get_object', 
@@ -382,11 +389,16 @@ def list_files():
                 ExpiresIn=3600
             )
             
+            # Check if file is audio or video
+            is_audio_or_video = file_ext in ['mp3', 'wav', 'aac', 'mp4', 'mov', 'avi', 'mkv']
+            
             final_list.append({
-                "name": item.get('original_name', key),
-                "key": key,  # <--- CRITICAL FOR DELETE BUTTON
+                "name": original_name,
+                "key": key,
                 "url": fresh_url,
                 "tags": item.get('tags', []),
+                "transcript": item.get('transcript', ''),
+                "is_audio_or_video": is_audio_or_video,
                 "size": 0 
             })
             
@@ -407,6 +419,34 @@ def search_files(query: str):
     except Exception as e:
         print(f"Search Error: {e}")
         return []
+
+def get_transcript(key: str):
+    """Retrieve transcript for a file from DynamoDB"""
+    global dynamodb
+    if dynamodb is None: startup()
+    try:
+        response = dynamodb.get_item(Key={'filename': key})
+        if 'Item' in response:
+            item = response['Item']
+            transcript = item.get('transcript', '')
+            file_name = item.get('original_name', key)
+            return {
+                'success': True,
+                'filename': file_name,
+                'transcript': transcript,
+                'has_transcript': len(transcript) > 0
+            }
+        else:
+            return {
+                'success': False,
+                'error': 'File not found'
+            }
+    except Exception as e:
+        print(f"Get Transcript Error: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
 
 def delete_file(key: str):
     # Helper to delete from S3 and DynamoDB

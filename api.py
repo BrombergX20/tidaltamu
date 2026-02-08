@@ -4,9 +4,7 @@ from contextlib import asynccontextmanager
 import os
 
 # Import functions from DB_stuff
-from DB_stuff import upload_file, list_files, search_files
-from DB_stuff import upload_file, list_files
-from DB_stuff import delete_file
+from DB_stuff import upload_file, list_files, search_files, delete_file, get_transcript
 from fastapi import Body
 
 @asynccontextmanager
@@ -71,3 +69,11 @@ async def delete_doc(payload: dict = Body(...)):
     if ok:
         return {"success": True}
     return {"success": False, "error": "delete failed"}
+
+# Get transcript route: expects JSON body {"key": "s3_key"}
+@app.post("/get_transcript")
+async def get_transcript_endpoint(payload: dict = Body(...)):
+    key = payload.get('key')
+    if not key:
+        return {"success": False, "error": "missing key"}
+    return get_transcript(key)
