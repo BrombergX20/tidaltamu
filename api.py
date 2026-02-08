@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
-from DB_stuff import upload_file, list_files
+from DB_stuff import upload_file, get_files
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,6 +61,7 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
 
     return {"message": "Unknown file type"}
 
-@app.get("/list_docs")
-async def get_all_docs():
-    return list_files()
+@app.get("/files")
+async def list_files():
+    files = get_files()
+    return {"files": files}
