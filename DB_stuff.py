@@ -126,13 +126,22 @@ def process_video_job_background(job_id, db_item_key):
                 
                 if status == 'SUCCEEDED':
                     print(f"[BACKGROUND] Video label detection completed: {job_id}")
-                    labels_set = set()
+                    labels_with_confidence = []
                     if 'Labels' in job_response:
                         for label_obj in job_response['Labels']:
                             if 'Label' in label_obj and 'Name' in label_obj['Label']:
-                                labels_set.add(label_obj['Label']['Name'])
-                    labels_list = list(labels_set)[:10]
-                    print(f"[BACKGROUND] Extracted {len(labels_list)} visual labels from video")
+                                confidence = label_obj.get('Label', {}).get('Confidence', 0)
+                                # Only include labels with confidence >= 70
+                                if confidence >= 70:
+                                    labels_with_confidence.append({
+                                        'name': label_obj['Label']['Name'],
+                                        'confidence': confidence
+                                    })
+                    
+                    # Sort by confidence (descending) and extract top 6 labels
+                    sorted_labels = sorted(labels_with_confidence, key=lambda x: x['confidence'], reverse=True)
+                    labels_list = [label['name'] for label in sorted_labels][:6]
+                    print(f"[BACKGROUND] Extracted {len(labels_list)} high-confidence visual labels from video")
                     
                     # Store visual labels in a temporary spot - will be merged with transcript tags later
                     if dynamodb:
@@ -182,23 +191,29 @@ def startup():
             print(f"Failed to connect to AWS: {e}")
 
 def get_ai_tags(bucket, key, file_ext):
-    """Helper: Asks AWS Rekognition what is in the image"""
+    """Helper: Extract importance-weighted labels from image using AWS Rekognition"""
     if file_ext not in ['jpg', 'jpeg', 'png']:
         return [] 
 
     try:
         response = rekognition.detect_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}},
-            MaxLabels=5,
-            MinConfidence=80
+            MaxLabels=10,
+            MinConfidence=70
         )
-        return [label['Name'] for label in response['Labels']]
+        
+        # Filter by confidence (>= 0.75) and sort by confidence score
+        high_confidence = [label for label in response['Labels'] if label.get('Confidence', 0) >= 75]
+        sorted_labels = sorted(high_confidence, key=lambda x: x.get('Confidence', 0), reverse=True)
+        
+        # Extract names, limit to top 6
+        return [label['Name'] for label in sorted_labels][:6]
     except Exception as e:
         print(f"AI Tagging Error: {e}")
         return []
 
 def get_text_tags(text):
-    """Extract tags from text using AWS Comprehend key phrases"""
+    """Extract importance-weighted tags from text using AWS Comprehend"""
     global comprehend
     if comprehend is None:
         startup()
@@ -212,9 +227,21 @@ def get_text_tags(text):
             Text=text[:5000],  # Comprehend has 5000 char limit per request
             LanguageCode='en'
         )
-        tags = [phrase['Text'] for phrase in response.get('KeyPhrases', [])]
-        print(f"Extracted {len(tags)} tags from text via Comprehend")
-        return tags[:10]  # Limit to 10 top tags
+        
+        # Filter by confidence score (>= 0.7) and sort by importance
+        high_confidence = [
+            phrase for phrase in response.get('KeyPhrases', [])
+            if phrase.get('Score', 0) >= 0.7
+        ]
+        
+        # Sort by confidence score (descending) to prioritize important phrases
+        sorted_tags = sorted(high_confidence, key=lambda x: x.get('Score', 0), reverse=True)
+        
+        # Extract text and limit to top 8 (more selective)
+        tags = [phrase['Text'] for phrase in sorted_tags][:8]
+        
+        print(f"Extracted {len(tags)} high-confidence tags from text via Comprehend")
+        return tags
     except Exception as e:
         print(f"Text Tagging Error: {e}")
         return []
