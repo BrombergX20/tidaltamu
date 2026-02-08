@@ -740,8 +740,8 @@ def qwen_search_files(user_query: str):
             if tags:
                 context += f"    Tags: {', '.join(tags)}\n"
             if transcript:
-                # Show first part of transcript
-                context += f"    Transcript excerpt: {transcript[:500]}...\n"
+                # Show full transcript (up to 8000 chars) for search context
+                context += f"    Transcript: {transcript[:8000]}\n"
             context += "\n"
             
             numbered_context.append(context)
