@@ -16,8 +16,8 @@ def make_key(filename: str) -> str:
 
 def startup():
     global s3_client, AWS_BUCKET
-    AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-    AWS_BUCKET = os.getenv("AWS_BUCKET", "YOUR-BUCKET-NAME-HERE") # <--- MAKE SURE THIS IS SET
+    AWS_REGION = os.getenv("S3_REGION")
+    AWS_BUCKET = os.getenv("BUCKET_NAME") # <--- MAKE SURE THIS IS SET
     
     if s3_client is None:
         s3_client = boto3.client('s3', region_name=AWS_REGION)
