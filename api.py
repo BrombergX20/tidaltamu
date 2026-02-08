@@ -35,7 +35,7 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         if upload_return.keys() == ["key", "name", "url", "content_type"]:
             return {"message": f"Document added successfully, type: {type}", "path": save_path}
         
-        return {"Message": "Failed to upload document"}+upload_return
+        return {"Message": "Failed to upload document", "Error":upload_return}
     
     elif type in ["mp4", "avi", "mkv"]:
         print("type: ", type)
@@ -46,7 +46,7 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         if upload_return.keys() == ["key", "name", "url", "content_type"]:
             return {"message": f"Video added successfully, type: {type}", "path": save_path}
         
-        return {"Message": "Failed to upload video file"}+upload_return
+        return {"Message": "Failed to upload video file", "Error":upload_return}
     
     elif type in ["mp3", "wav", "aac"]:
         print("type: ", type)
@@ -57,7 +57,7 @@ async def add_doc(file: UploadFile = File(...), type: str = Form(...) ):
         if upload_return.keys() == ["key", "name", "url", "content_type"]:
             return {"message": f"Audio added successfully, type: {type}", "path": save_path}
         
-        return {"Message": "Failed to upload audio file"}+upload_return
+        return {"Message": "Failed to upload audio file", "Error":upload_return}
 
     return {"message": "Unknown file type"}
 
